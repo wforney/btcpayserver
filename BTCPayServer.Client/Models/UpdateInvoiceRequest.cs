@@ -1,9 +1,8 @@
 using Newtonsoft.Json.Linq;
 
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class UpdateInvoiceRequest
 {
-    public class UpdateInvoiceRequest
-    {
-        public JObject Metadata { get; set; }
-    }
+    public JObject Metadata { get; set; }
 }

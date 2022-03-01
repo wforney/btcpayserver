@@ -1,29 +1,28 @@
 using BTCPayServer.Services.Invoices;
 
-namespace BTCPayServer.Data
+namespace BTCPayServer.Data;
+
+public static class InvoiceDataExtensions
 {
-    public static class InvoiceDataExtensions
+    public static InvoiceEntity GetBlob(this Data.InvoiceData invoiceData, BTCPayNetworkProvider networks)
     {
-        public static InvoiceEntity GetBlob(this Data.InvoiceData invoiceData, BTCPayNetworkProvider networks)
+        InvoiceEntity entity = NBitcoin.JsonConverters.Serializer.ToObject<InvoiceEntity>(ZipUtils.Unzip(invoiceData.Blob), null);
+        entity.Networks = networks;
+        if (entity.Metadata is null)
         {
-            var entity = NBitcoin.JsonConverters.Serializer.ToObject<InvoiceEntity>(ZipUtils.Unzip(invoiceData.Blob), null);
-            entity.Networks = networks;
-            if (entity.Metadata is null)
+            if (entity.Version < InvoiceEntity.GreenfieldInvoices_Version)
             {
-                if (entity.Version < InvoiceEntity.GreenfieldInvoices_Version)
-                {
-                    entity.MigrateLegacyInvoice();
-                }
-                else
-                {
-                    entity.Metadata = new InvoiceMetadata();
-                }
+                entity.MigrateLegacyInvoice();
             }
-            return entity;
+            else
+            {
+                entity.Metadata = new InvoiceMetadata();
+            }
         }
-        public static InvoiceState GetInvoiceState(this InvoiceData invoiceData)
-        {
-            return new InvoiceState(invoiceData.Status, invoiceData.ExceptionStatus);
-        }
+        return entity;
+    }
+    public static InvoiceState GetInvoiceState(this InvoiceData invoiceData)
+    {
+        return new InvoiceState(invoiceData.Status, invoiceData.ExceptionStatus);
     }
 }

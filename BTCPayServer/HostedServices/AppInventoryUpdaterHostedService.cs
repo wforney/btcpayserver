@@ -1,3 +1,5 @@
+namespace BTCPayServer.HostedServices;
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,139 +10,152 @@ using BTCPayServer.Events;
 using BTCPayServer.Logging;
 using BTCPayServer.Services.Apps;
 
-namespace BTCPayServer.HostedServices
+public class AppInventoryUpdaterHostedService : EventHostedServiceBase
 {
-    public class AppInventoryUpdaterHostedService : EventHostedServiceBase
+    private readonly EventAggregator _eventAggregator;
+    private readonly AppService _appService;
+
+    protected override void SubscribeToEvents()
     {
-        private readonly EventAggregator _eventAggregator;
-        private readonly AppService _appService;
+        Subscribe<InvoiceEvent>();
+        Subscribe<UpdateAppInventory>();
+    }
 
-        protected override void SubscribeToEvents()
-        {
-            Subscribe<InvoiceEvent>();
-            Subscribe<UpdateAppInventory>();
-        }
+    public AppInventoryUpdaterHostedService(EventAggregator eventAggregator, AppService appService, Logs logs) : base(eventAggregator, logs)
+    {
+        _eventAggregator = eventAggregator;
+        _appService = appService;
+    }
 
-        public AppInventoryUpdaterHostedService(EventAggregator eventAggregator, AppService appService, Logs logs) : base(eventAggregator, logs)
+    protected override async Task ProcessEvent(object evt, CancellationToken cancellationToken)
+    {
+        if (evt is UpdateAppInventory updateAppInventory)
         {
-            _eventAggregator = eventAggregator;
-            _appService = appService;
-        }
-
-        protected override async Task ProcessEvent(object evt, CancellationToken cancellationToken)
-        {
-            if (evt is UpdateAppInventory updateAppInventory)
+            //get all apps that were tagged that have manageable inventory that has an item that matches the item code in the invoice
+            IEnumerable<(Data.AppData Data, object Settings, Models.AppViewModels.ViewPointOfSaleViewModel.Item[] Items)> apps =
+                (await _appService.GetApps(updateAppInventory.AppId))
+                    .Select(
+                        data =>
+                        {
+                            switch (Enum.Parse<AppType>(data.AppType))
+                            {
+                                case AppType.PointOfSale:
+                                    UIAppsController.PointOfSaleSettings possettings = data.GetSettings<UIAppsController.PointOfSaleSettings>();
+                                    return (
+                                        Data: data,
+                                        Settings: possettings,
+                                        Items: _appService.Parse(possettings.Template, possettings.Currency)
+                                    );
+                                case AppType.Crowdfund:
+                                    CrowdfundSettings cfsettings = data.GetSettings<CrowdfundSettings>();
+                                    return (
+                                        Data: data,
+                                        Settings: cfsettings,
+                                        Items: _appService.Parse(cfsettings.PerksTemplate, cfsettings.TargetCurrency)
+                                    );
+                                default:
+                                    return (
+                                        Data: (Data.AppData)null,
+                                        Settings: (object)null,
+                                        Items: (Models.AppViewModels.ViewPointOfSaleViewModel.Item[])null
+                                    );
+                            }
+                        })
+                    .Where(
+                        tuple =>
+                            tuple.Data is not null &&
+                            tuple.Items.Any(
+                                item =>
+                                    item.Inventory.HasValue &&
+                                    updateAppInventory.Items.ContainsKey(item.Id)));
+            foreach ((Data.AppData Data, object Settings, Models.AppViewModels.ViewPointOfSaleViewModel.Item[] Items) valueTuple in apps)
             {
-                //get all apps that were tagged that have manageable inventory that has an item that matches the item code in the invoice
-                var apps = (await _appService.GetApps(updateAppInventory.AppId)).Select(data =>
-                    {
-                        switch (Enum.Parse<AppType>(data.AppType))
-                        {
-                            case AppType.PointOfSale:
-                                var possettings = data.GetSettings<UIAppsController.PointOfSaleSettings>();
-                                return (Data: data, Settings: (object)possettings,
-                                    Items: _appService.Parse(possettings.Template, possettings.Currency));
-                            case AppType.Crowdfund:
-                                var cfsettings = data.GetSettings<CrowdfundSettings>();
-                                return (Data: data, Settings: (object)cfsettings,
-                                    Items: _appService.Parse(cfsettings.PerksTemplate, cfsettings.TargetCurrency));
-                            default:
-                                return (null, null, null);
-                        }
-                    }).Where(tuple => tuple.Data != null && tuple.Items.Any(item =>
-                                          item.Inventory.HasValue &&
-                                          updateAppInventory.Items.ContainsKey(item.Id)));
-                foreach (var valueTuple in apps)
+                foreach (Models.AppViewModels.ViewPointOfSaleViewModel.Item item1 in valueTuple.Items.Where(item =>
+                    updateAppInventory.Items.ContainsKey(item.Id)))
                 {
-                    foreach (var item1 in valueTuple.Items.Where(item =>
-                        updateAppInventory.Items.ContainsKey(item.Id)))
+                    if (updateAppInventory.Deduct)
                     {
-                        if (updateAppInventory.Deduct)
-                        {
-                            item1.Inventory -= updateAppInventory.Items[item1.Id];
-                        }
-                        else
-                        {
-                            item1.Inventory += updateAppInventory.Items[item1.Id];
-                        }
+                        item1.Inventory -= updateAppInventory.Items[item1.Id];
                     }
-
-                    switch (Enum.Parse<AppType>(valueTuple.Data.AppType))
+                    else
                     {
-                        case AppType.PointOfSale:
-
-                            ((UIAppsController.PointOfSaleSettings)valueTuple.Settings).Template =
-                                _appService.SerializeTemplate(valueTuple.Items);
-                            break;
-                        case AppType.Crowdfund:
-                            ((CrowdfundSettings)valueTuple.Settings).PerksTemplate =
-                                _appService.SerializeTemplate(valueTuple.Items);
-                            break;
-                        default:
-                            throw new InvalidOperationException();
+                        item1.Inventory += updateAppInventory.Items[item1.Id];
                     }
-
-                    valueTuple.Data.SetSettings(valueTuple.Settings);
-                    await _appService.UpdateOrCreateApp(valueTuple.Data);
                 }
 
-
-            }
-            else if (evt is InvoiceEvent invoiceEvent)
-            {
-                Dictionary<string, int> cartItems = null;
-                bool deduct;
-                switch (invoiceEvent.Name)
+                switch (Enum.Parse<AppType>(valueTuple.Data.AppType))
                 {
-                    case InvoiceEvent.Expired:
+                    case AppType.PointOfSale:
 
-                    case InvoiceEvent.MarkedInvalid:
-                        deduct = false;
+                        ((UIAppsController.PointOfSaleSettings)valueTuple.Settings).Template =
+                            _appService.SerializeTemplate(valueTuple.Items);
                         break;
-                    case InvoiceEvent.Created:
-                        deduct = true;
+                    case AppType.Crowdfund:
+                        ((CrowdfundSettings)valueTuple.Settings).PerksTemplate =
+                            _appService.SerializeTemplate(valueTuple.Items);
                         break;
                     default:
-                        return;
+                        throw new InvalidOperationException();
                 }
 
-                if ((!string.IsNullOrEmpty(invoiceEvent.Invoice.Metadata.ItemCode) ||
-                     AppService.TryParsePosCartItems(invoiceEvent.Invoice.Metadata.PosData, out cartItems)))
+                valueTuple.Data.SetSettings(valueTuple.Settings);
+                await _appService.UpdateOrCreateApp(valueTuple.Data);
+            }
+        }
+        else if (evt is InvoiceEvent invoiceEvent)
+        {
+            Dictionary<string, int> cartItems = null;
+            bool deduct;
+            switch (invoiceEvent.Name)
+            {
+                case InvoiceEvent.Expired:
+
+                case InvoiceEvent.MarkedInvalid:
+                    deduct = false;
+                    break;
+                case InvoiceEvent.Created:
+                    deduct = true;
+                    break;
+                default:
+                    return;
+            }
+
+            if (!string.IsNullOrEmpty(invoiceEvent.Invoice.Metadata.ItemCode) ||
+                AppService.TryParsePosCartItems(invoiceEvent.Invoice.Metadata.PosData, out cartItems))
+            {
+                var appIds = AppService.GetAppInternalTags(invoiceEvent.Invoice);
+
+                if (!appIds.Any())
                 {
-                    var appIds = AppService.GetAppInternalTags(invoiceEvent.Invoice);
+                    return;
+                }
 
-                    if (!appIds.Any())
-                    {
-                        return;
-                    }
+                Dictionary<string, int> items = cartItems ?? new Dictionary<string, int>();
+                if (!string.IsNullOrEmpty(invoiceEvent.Invoice.Metadata.ItemCode))
+                {
+                    _ = items.TryAdd(invoiceEvent.Invoice.Metadata.ItemCode, 1);
+                }
 
-                    var items = cartItems ?? new Dictionary<string, int>();
-                    if (!string.IsNullOrEmpty(invoiceEvent.Invoice.Metadata.ItemCode))
-                    {
-                        items.TryAdd(invoiceEvent.Invoice.Metadata.ItemCode, 1);
-                    }
-
-                    _eventAggregator.Publish(new UpdateAppInventory()
+                _eventAggregator.Publish(
+                    new UpdateAppInventory()
                     {
                         Deduct = deduct,
                         Items = items,
                         AppId = appIds
                     });
-
-                }
             }
         }
+    }
 
-        public class UpdateAppInventory
+    public class UpdateAppInventory
+    {
+        public string[] AppId { get; set; }
+        public Dictionary<string, int> Items { get; set; }
+        public bool Deduct { get; set; }
+
+        public override string ToString()
         {
-            public string[] AppId { get; set; }
-            public Dictionary<string, int> Items { get; set; }
-            public bool Deduct { get; set; }
-
-            public override string ToString()
-            {
-                return string.Empty;
-            }
+            return string.Empty;
         }
     }
 }

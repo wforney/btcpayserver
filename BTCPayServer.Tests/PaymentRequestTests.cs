@@ -1,6 +1,3 @@
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 using BTCPayServer.Controllers;
 using BTCPayServer.Data;
 using BTCPayServer.Models.PaymentRequestViewModels;
@@ -11,229 +8,228 @@ using NBitpayClient;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace BTCPayServer.Tests
+namespace BTCPayServer.Tests;
+
+[Collection(nameof(NonParallelizableCollectionDefinition))]
+public class PaymentRequestTests : UnitTestBase
 {
-    [Collection(nameof(NonParallelizableCollectionDefinition))]
-    public class PaymentRequestTests : UnitTestBase
+    public PaymentRequestTests(ITestOutputHelper helper) : base(helper)
     {
-        public PaymentRequestTests(ITestOutputHelper helper) : base(helper)
+    }
+
+    [Fact]
+    [Trait("Integration", "Integration")]
+    public async Task CanCreateViewUpdateAndDeletePaymentRequest()
+    {
+        using ServerTester tester = CreateServerTester();
+        await tester.StartAsync();
+        TestAccount user = tester.NewAccount();
+        await user.GrantAccessAsync();
+        user.RegisterDerivationScheme("BTC");
+
+        TestAccount user2 = tester.NewAccount();
+
+        await user2.GrantAccessAsync();
+
+        UIPaymentRequestController paymentRequestController = user.GetController<UIPaymentRequestController>();
+        UIPaymentRequestController guestpaymentRequestController = user2.GetController<UIPaymentRequestController>();
+
+        var request = new UpdatePaymentRequestViewModel
         {
-        }
+            Title = "original juice",
+            Currency = "BTC",
+            Amount = 1,
+            StoreId = user.StoreId,
+            Description = "description"
+        };
+        var id = Assert
+            .IsType<RedirectToActionResult>(await paymentRequestController.EditPaymentRequest(null, request))
+            .RouteValues.Values.Last().ToString();
 
-        [Fact]
-        [Trait("Integration", "Integration")]
-        public async Task CanCreateViewUpdateAndDeletePaymentRequest()
-        {
-            using var tester = CreateServerTester();
-            await tester.StartAsync();
-            var user = tester.NewAccount();
-            await user.GrantAccessAsync();
-            user.RegisterDerivationScheme("BTC");
+        paymentRequestController.HttpContext.SetPaymentRequestData(new PaymentRequestData { Id = id, StoreDataId = request.StoreId });
 
-            var user2 = tester.NewAccount();
+        // Permission guard for guests editing 
+        Assert
+            .IsType<NotFoundResult>(guestpaymentRequestController.EditPaymentRequest(user.StoreId, id));
 
-            await user2.GrantAccessAsync();
+        request.Title = "update";
+        Assert.IsType<RedirectToActionResult>(await paymentRequestController.EditPaymentRequest(id, request));
 
-            var paymentRequestController = user.GetController<UIPaymentRequestController>();
-            var guestpaymentRequestController = user2.GetController<UIPaymentRequestController>();
-
-            var request = new UpdatePaymentRequestViewModel
-            {
-                Title = "original juice",
-                Currency = "BTC",
-                Amount = 1,
-                StoreId = user.StoreId,
-                Description = "description"
-            };
-            var id = Assert
-                .IsType<RedirectToActionResult>(await paymentRequestController.EditPaymentRequest(null, request))
-                .RouteValues.Values.Last().ToString();
-
-            paymentRequestController.HttpContext.SetPaymentRequestData(new PaymentRequestData { Id = id, StoreDataId = request.StoreId });
-
-            // Permission guard for guests editing 
-            Assert
-                .IsType<NotFoundResult>(guestpaymentRequestController.EditPaymentRequest(user.StoreId, id));
-
-            request.Title = "update";
-            Assert.IsType<RedirectToActionResult>(await paymentRequestController.EditPaymentRequest(id, request));
-
-            Assert.Equal(request.Title,
-                Assert.IsType<ViewPaymentRequestViewModel>(Assert
-                    .IsType<ViewResult>(await paymentRequestController.ViewPaymentRequest(id)).Model).Title);
-
-            Assert.False(string.IsNullOrEmpty(id));
-
+        Assert.Equal(request.Title,
             Assert.IsType<ViewPaymentRequestViewModel>(Assert
-                .IsType<ViewResult>(await paymentRequestController.ViewPaymentRequest(id)).Model);
+                .IsType<ViewResult>(await paymentRequestController.ViewPaymentRequest(id)).Model).Title);
 
-            // Archive
-            Assert
-                .IsType<RedirectToActionResult>(await paymentRequestController.TogglePaymentRequestArchival(id));
-            Assert.True(Assert
-                .IsType<ViewPaymentRequestViewModel>(Assert
-                    .IsType<ViewResult>(await paymentRequestController.ViewPaymentRequest(id)).Model).Archived);
+        Assert.False(string.IsNullOrEmpty(id));
 
-            Assert.Empty(Assert
-                .IsType<ListPaymentRequestsViewModel>(Assert
-                    .IsType<ViewResult>(await paymentRequestController.GetPaymentRequests(user.StoreId)).Model).Items);
+        Assert.IsType<ViewPaymentRequestViewModel>(Assert
+            .IsType<ViewResult>(await paymentRequestController.ViewPaymentRequest(id)).Model);
 
-            // Unarchive
-            Assert
-                .IsType<RedirectToActionResult>(await paymentRequestController.TogglePaymentRequestArchival(id));
+        // Archive
+        Assert
+            .IsType<RedirectToActionResult>(await paymentRequestController.TogglePaymentRequestArchival(id));
+        Assert.True(Assert
+            .IsType<ViewPaymentRequestViewModel>(Assert
+                .IsType<ViewResult>(await paymentRequestController.ViewPaymentRequest(id)).Model).Archived);
 
-            Assert.False(Assert
-                .IsType<ViewPaymentRequestViewModel>(Assert
-                    .IsType<ViewResult>(await paymentRequestController.ViewPaymentRequest(id)).Model).Archived);
+        Assert.Empty(Assert
+            .IsType<ListPaymentRequestsViewModel>(Assert
+                .IsType<ViewResult>(await paymentRequestController.GetPaymentRequests(user.StoreId)).Model).Items);
 
-            Assert.Single(Assert
-                .IsType<ListPaymentRequestsViewModel>(Assert
-                    .IsType<ViewResult>(await paymentRequestController.GetPaymentRequests(user.StoreId)).Model).Items);
-        }
+        // Unarchive
+        Assert
+            .IsType<RedirectToActionResult>(await paymentRequestController.TogglePaymentRequestArchival(id));
 
-        [Fact(Timeout = 60 * 2 * 1000)]
-        [Trait("Integration", "Integration")]
-        public async Task CanPayPaymentRequestWhenPossible()
+        Assert.False(Assert
+            .IsType<ViewPaymentRequestViewModel>(Assert
+                .IsType<ViewResult>(await paymentRequestController.ViewPaymentRequest(id)).Model).Archived);
+
+        Assert.Single(Assert
+            .IsType<ListPaymentRequestsViewModel>(Assert
+                .IsType<ViewResult>(await paymentRequestController.GetPaymentRequests(user.StoreId)).Model).Items);
+    }
+
+    [Fact(Timeout = 60 * 2 * 1000)]
+    [Trait("Integration", "Integration")]
+    public async Task CanPayPaymentRequestWhenPossible()
+    {
+        using ServerTester tester = CreateServerTester();
+        await tester.StartAsync();
+        TestAccount user = tester.NewAccount();
+        await user.GrantAccessAsync();
+        user.RegisterDerivationScheme("BTC");
+
+        UIPaymentRequestController paymentRequestController = user.GetController<UIPaymentRequestController>();
+
+        Assert.IsType<NotFoundResult>(
+            await paymentRequestController.PayPaymentRequest(Guid.NewGuid().ToString()));
+
+
+        var request = new UpdatePaymentRequestViewModel()
         {
-            using var tester = CreateServerTester();
-            await tester.StartAsync();
-            var user = tester.NewAccount();
-            await user.GrantAccessAsync();
-            user.RegisterDerivationScheme("BTC");
+            Title = "original juice",
+            Currency = "BTC",
+            Amount = 1,
+            StoreId = user.StoreId,
+            Description = "description"
+        };
+        System.Collections.Generic.KeyValuePair<string, object> response = Assert
+            .IsType<RedirectToActionResult>(paymentRequestController.EditPaymentRequest(null, request).Result)
+            .RouteValues.Last();
 
-            var paymentRequestController = user.GetController<UIPaymentRequestController>();
+        var invoiceId = Assert
+            .IsType<OkObjectResult>(
+                await paymentRequestController.PayPaymentRequest(response.Value.ToString(), false)).Value
+            .ToString();
 
-            Assert.IsType<NotFoundResult>(
-                await paymentRequestController.PayPaymentRequest(Guid.NewGuid().ToString()));
+        RedirectToActionResult actionResult = Assert
+            .IsType<RedirectToActionResult>(
+                await paymentRequestController.PayPaymentRequest(response.Value.ToString()));
 
+        Assert.Equal("Checkout", actionResult.ActionName);
+        Assert.Equal("UIInvoice", actionResult.ControllerName);
+        Assert.Contains(actionResult.RouteValues,
+            pair => pair.Key == "Id" && pair.Value.ToString() == invoiceId);
 
-            var request = new UpdatePaymentRequestViewModel()
-            {
-                Title = "original juice",
-                Currency = "BTC",
-                Amount = 1,
-                StoreId = user.StoreId,
-                Description = "description"
-            };
-            var response = Assert
-                .IsType<RedirectToActionResult>(paymentRequestController.EditPaymentRequest(null, request).Result)
-                .RouteValues.Last();
+        Invoice invoice = user.BitPay.GetInvoice(invoiceId, Facade.Merchant);
+        Assert.Equal(1, invoice.Price);
 
-            var invoiceId = Assert
-                .IsType<OkObjectResult>(
-                    await paymentRequestController.PayPaymentRequest(response.Value.ToString(), false)).Value
-                .ToString();
-
-            var actionResult = Assert
-                .IsType<RedirectToActionResult>(
-                    await paymentRequestController.PayPaymentRequest(response.Value.ToString()));
-
-            Assert.Equal("Checkout", actionResult.ActionName);
-            Assert.Equal("UIInvoice", actionResult.ControllerName);
-            Assert.Contains(actionResult.RouteValues,
-                pair => pair.Key == "Id" && pair.Value.ToString() == invoiceId);
-
-            var invoice = user.BitPay.GetInvoice(invoiceId, Facade.Merchant);
-            Assert.Equal(1, invoice.Price);
-
-            request = new UpdatePaymentRequestViewModel()
-            {
-                Title = "original juice with expiry",
-                Currency = "BTC",
-                Amount = 1,
-                ExpiryDate = DateTime.Today.Subtract(TimeSpan.FromDays(2)),
-                StoreId = user.StoreId,
-                Description = "description"
-            };
-
-            response = Assert
-                .IsType<RedirectToActionResult>(paymentRequestController.EditPaymentRequest(null, request).Result)
-                .RouteValues.Last();
-
-            Assert
-                .IsType<BadRequestObjectResult>(
-                    await paymentRequestController.PayPaymentRequest(response.Value.ToString(), false));
-        }
-
-        [Fact(Timeout = 60 * 2 * 1000)]
-        [Trait("Integration", "Integration")]
-        public async Task CanCancelPaymentWhenPossible()
+        request = new UpdatePaymentRequestViewModel()
         {
-            using var tester = CreateServerTester();
-            await tester.StartAsync();
-            var user = tester.NewAccount();
-            user.GrantAccess();
-            user.RegisterDerivationScheme("BTC");
+            Title = "original juice with expiry",
+            Currency = "BTC",
+            Amount = 1,
+            ExpiryDate = DateTime.Today.Subtract(TimeSpan.FromDays(2)),
+            StoreId = user.StoreId,
+            Description = "description"
+        };
 
-            var paymentRequestController = user.GetController<UIPaymentRequestController>();
+        response = Assert
+            .IsType<RedirectToActionResult>(paymentRequestController.EditPaymentRequest(null, request).Result)
+            .RouteValues.Last();
 
-            Assert.IsType<NotFoundResult>(await
-                paymentRequestController.CancelUnpaidPendingInvoice(Guid.NewGuid().ToString(), false));
+        Assert
+            .IsType<BadRequestObjectResult>(
+                await paymentRequestController.PayPaymentRequest(response.Value.ToString(), false));
+    }
 
-            var request = new UpdatePaymentRequestViewModel()
-            {
-                Title = "original juice",
-                Currency = "BTC",
-                Amount = 1,
-                StoreId = user.StoreId,
-                Description = "description"
-            };
-            var response = Assert
-                .IsType<RedirectToActionResult>(paymentRequestController.EditPaymentRequest(null, request).Result)
-                .RouteValues.Last();
-            var invoiceId = response.Value.ToString();
-            await paymentRequestController.PayPaymentRequest(invoiceId, false);
-            Assert.IsType<BadRequestObjectResult>(await
-                paymentRequestController.CancelUnpaidPendingInvoice(invoiceId, false));
+    [Fact(Timeout = 60 * 2 * 1000)]
+    [Trait("Integration", "Integration")]
+    public async Task CanCancelPaymentWhenPossible()
+    {
+        using ServerTester tester = CreateServerTester();
+        await tester.StartAsync();
+        TestAccount user = tester.NewAccount();
+        user.GrantAccess();
+        user.RegisterDerivationScheme("BTC");
 
-            request.AllowCustomPaymentAmounts = true;
+        UIPaymentRequestController paymentRequestController = user.GetController<UIPaymentRequestController>();
 
-            response = Assert
-                .IsType<RedirectToActionResult>(paymentRequestController.EditPaymentRequest(null, request).Result)
-                .RouteValues.Last();
+        Assert.IsType<NotFoundResult>(await
+            paymentRequestController.CancelUnpaidPendingInvoice(Guid.NewGuid().ToString(), false));
 
-            var paymentRequestId = response.Value.ToString();
+        var request = new UpdatePaymentRequestViewModel()
+        {
+            Title = "original juice",
+            Currency = "BTC",
+            Amount = 1,
+            StoreId = user.StoreId,
+            Description = "description"
+        };
+        System.Collections.Generic.KeyValuePair<string, object> response = Assert
+            .IsType<RedirectToActionResult>(paymentRequestController.EditPaymentRequest(null, request).Result)
+            .RouteValues.Last();
+        var invoiceId = response.Value.ToString();
+        await paymentRequestController.PayPaymentRequest(invoiceId, false);
+        Assert.IsType<BadRequestObjectResult>(await
+            paymentRequestController.CancelUnpaidPendingInvoice(invoiceId, false));
 
-            invoiceId = Assert
-                .IsType<OkObjectResult>(await paymentRequestController.PayPaymentRequest(paymentRequestId, false))
-                .Value
-                .ToString();
+        request.AllowCustomPaymentAmounts = true;
 
-            var actionResult = Assert
-                .IsType<RedirectToActionResult>(
-                    await paymentRequestController.PayPaymentRequest(response.Value.ToString()));
+        response = Assert
+            .IsType<RedirectToActionResult>(paymentRequestController.EditPaymentRequest(null, request).Result)
+            .RouteValues.Last();
 
-            Assert.Equal("Checkout", actionResult.ActionName);
-            Assert.Equal("UIInvoice", actionResult.ControllerName);
-            Assert.Contains(actionResult.RouteValues,
-                pair => pair.Key == "Id" && pair.Value.ToString() == invoiceId);
+        var paymentRequestId = response.Value.ToString();
 
-            var invoice = user.BitPay.GetInvoice(invoiceId, Facade.Merchant);
-            Assert.Equal(InvoiceState.ToString(InvoiceStatusLegacy.New), invoice.Status);
-            Assert.IsType<OkObjectResult>(await
-                paymentRequestController.CancelUnpaidPendingInvoice(paymentRequestId, false));
+        invoiceId = Assert
+            .IsType<OkObjectResult>(await paymentRequestController.PayPaymentRequest(paymentRequestId, false))
+            .Value
+            .ToString();
 
-            invoice = user.BitPay.GetInvoice(invoiceId, Facade.Merchant);
-            Assert.Equal(InvoiceState.ToString(InvoiceStatusLegacy.Invalid), invoice.Status);
+        RedirectToActionResult actionResult = Assert
+            .IsType<RedirectToActionResult>(
+                await paymentRequestController.PayPaymentRequest(response.Value.ToString()));
 
-            Assert.IsType<BadRequestObjectResult>(await
-                paymentRequestController.CancelUnpaidPendingInvoice(paymentRequestId, false));
+        Assert.Equal("Checkout", actionResult.ActionName);
+        Assert.Equal("UIInvoice", actionResult.ControllerName);
+        Assert.Contains(actionResult.RouteValues,
+            pair => pair.Key == "Id" && pair.Value.ToString() == invoiceId);
 
-            invoiceId = Assert
-                .IsType<OkObjectResult>(await paymentRequestController.PayPaymentRequest(paymentRequestId, false))
-                .Value
-                .ToString();
+        Invoice invoice = user.BitPay.GetInvoice(invoiceId, Facade.Merchant);
+        Assert.Equal(InvoiceState.ToString(InvoiceStatusLegacy.New), invoice.Status);
+        Assert.IsType<OkObjectResult>(await
+            paymentRequestController.CancelUnpaidPendingInvoice(paymentRequestId, false));
 
-            await user.BitPay.GetInvoiceAsync(invoiceId, Facade.Merchant);
+        invoice = user.BitPay.GetInvoice(invoiceId, Facade.Merchant);
+        Assert.Equal(InvoiceState.ToString(InvoiceStatusLegacy.Invalid), invoice.Status);
 
-            //a hack to generate invoices for the payment request is to manually create an invoice with an order id that matches:
-            user.BitPay.CreateInvoice(new Invoice(1, "USD")
-            {
-                OrderId = PaymentRequestRepository.GetOrderIdForPaymentRequest(paymentRequestId)
-            });
-            //shouldn't crash
-            await paymentRequestController.ViewPaymentRequest(paymentRequestId);
-            await paymentRequestController.CancelUnpaidPendingInvoice(paymentRequestId);
-        }
+        Assert.IsType<BadRequestObjectResult>(await
+            paymentRequestController.CancelUnpaidPendingInvoice(paymentRequestId, false));
+
+        invoiceId = Assert
+            .IsType<OkObjectResult>(await paymentRequestController.PayPaymentRequest(paymentRequestId, false))
+            .Value
+            .ToString();
+
+        await user.BitPay.GetInvoiceAsync(invoiceId, Facade.Merchant);
+
+        //a hack to generate invoices for the payment request is to manually create an invoice with an order id that matches:
+        user.BitPay.CreateInvoice(new Invoice(1, "USD")
+        {
+            OrderId = PaymentRequestRepository.GetOrderIdForPaymentRequest(paymentRequestId)
+        });
+        //shouldn't crash
+        await paymentRequestController.ViewPaymentRequest(paymentRequestId);
+        await paymentRequestController.CancelUnpaidPendingInvoice(paymentRequestId);
     }
 }

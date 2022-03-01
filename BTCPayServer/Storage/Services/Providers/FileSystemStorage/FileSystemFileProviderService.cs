@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Threading.Tasks;
 using BTCPayServer.Configuration;
 using BTCPayServer.Data;
 using BTCPayServer.Storage.Models;
@@ -10,61 +7,60 @@ using Newtonsoft.Json;
 using TwentyTwenty.Storage;
 using TwentyTwenty.Storage.Local;
 
-namespace BTCPayServer.Storage.Services.Providers.FileSystemStorage
+namespace BTCPayServer.Storage.Services.Providers.FileSystemStorage;
+
+public class
+    FileSystemFileProviderService : BaseTwentyTwentyStorageFileProviderServiceBase<FileSystemStorageConfiguration>
 {
-    public class
-        FileSystemFileProviderService : BaseTwentyTwentyStorageFileProviderServiceBase<FileSystemStorageConfiguration>
+    private readonly IOptions<DataDirectories> _datadirs;
+
+    public FileSystemFileProviderService(IOptions<DataDirectories> datadirs)
     {
-        private readonly IOptions<DataDirectories> _datadirs;
+        _datadirs = datadirs;
+    }
+    public const string LocalStorageDirectoryName = "LocalStorage";
 
-        public FileSystemFileProviderService(IOptions<DataDirectories> datadirs)
+    public override StorageProvider StorageProvider()
+    {
+        return Storage.Models.StorageProvider.FileSystem;
+    }
+
+    protected override Task<IStorageProvider> GetStorageProvider(FileSystemStorageConfiguration configuration)
+    {
+        return Task.FromResult<IStorageProvider>(
+            new LocalStorageProvider(new DirectoryInfo(_datadirs.Value.StorageDir).FullName));
+    }
+
+    public override async Task<string> GetFileUrl(Uri baseUri, StoredFile storedFile, StorageSettings configuration)
+    {
+        var baseResult = await base.GetFileUrl(baseUri, storedFile, configuration);
+        // Set the relative URL to the directory name if the root path is default, otherwise add root path before the directory name
+        var relativeUrl = baseUri.AbsolutePath == "/" ? LocalStorageDirectoryName : $"{baseUri.AbsolutePath}/{LocalStorageDirectoryName}";
+        var url = new Uri(baseUri, relativeUrl);
+        return baseResult.Replace(new DirectoryInfo(_datadirs.Value.StorageDir).FullName, url.AbsoluteUri,
+            StringComparison.InvariantCultureIgnoreCase);
+    }
+
+    public override async Task<string> GetTemporaryFileUrl(Uri baseUri, StoredFile storedFile,
+        StorageSettings configuration, DateTimeOffset expiry, bool isDownload,
+        BlobUrlAccess access = BlobUrlAccess.Read)
+    {
+
+        var localFileDescriptor = new TemporaryLocalFileDescriptor()
         {
-            _datadirs = datadirs;
-        }
-        public const string LocalStorageDirectoryName = "LocalStorage";
-
-        public override StorageProvider StorageProvider()
+            Expiry = expiry,
+            FileId = storedFile.Id,
+            IsDownload = isDownload
+        };
+        var name = Guid.NewGuid().ToString();
+        var fullPath = Path.Combine(_datadirs.Value.TempStorageDir, name);
+        if (!File.Exists(fullPath))
         {
-            return Storage.Models.StorageProvider.FileSystem;
+            File.Create(fullPath).Dispose();
         }
 
-        protected override Task<IStorageProvider> GetStorageProvider(FileSystemStorageConfiguration configuration)
-        {
-            return Task.FromResult<IStorageProvider>(
-                new LocalStorageProvider(new DirectoryInfo(_datadirs.Value.StorageDir).FullName));
-        }
+        await File.WriteAllTextAsync(Path.Combine(_datadirs.Value.TempStorageDir, name), JsonConvert.SerializeObject(localFileDescriptor));
 
-        public override async Task<string> GetFileUrl(Uri baseUri, StoredFile storedFile, StorageSettings configuration)
-        {
-            var baseResult = await base.GetFileUrl(baseUri, storedFile, configuration);
-            // Set the relative URL to the directory name if the root path is default, otherwise add root path before the directory name
-            var relativeUrl = baseUri.AbsolutePath == "/" ? LocalStorageDirectoryName : $"{baseUri.AbsolutePath}/{LocalStorageDirectoryName}";
-            var url = new Uri(baseUri, relativeUrl);
-            return baseResult.Replace(new DirectoryInfo(_datadirs.Value.StorageDir).FullName, url.AbsoluteUri,
-                StringComparison.InvariantCultureIgnoreCase);
-        }
-
-        public override async Task<string> GetTemporaryFileUrl(Uri baseUri, StoredFile storedFile,
-            StorageSettings configuration, DateTimeOffset expiry, bool isDownload,
-            BlobUrlAccess access = BlobUrlAccess.Read)
-        {
-
-            var localFileDescriptor = new TemporaryLocalFileDescriptor()
-            {
-                Expiry = expiry,
-                FileId = storedFile.Id,
-                IsDownload = isDownload
-            };
-            var name = Guid.NewGuid().ToString();
-            var fullPath = Path.Combine(_datadirs.Value.TempStorageDir, name);
-            if (!File.Exists(fullPath))
-            {
-                File.Create(fullPath).Dispose();
-            }
-
-            await File.WriteAllTextAsync(Path.Combine(_datadirs.Value.TempStorageDir, name), JsonConvert.SerializeObject(localFileDescriptor));
-
-            return new Uri(baseUri, $"{LocalStorageDirectoryName}tmp/{name}{(isDownload ? "?download" : string.Empty)}").AbsoluteUri;
-        }
+        return new Uri(baseUri, $"{LocalStorageDirectoryName}tmp/{name}{(isDownload ? "?download" : string.Empty)}").AbsoluteUri;
     }
 }

@@ -1,71 +1,67 @@
-using System;
 using System.Runtime.CompilerServices;
-using System.Threading;
-using System.Threading.Tasks;
 using BTCPayServer.Logging;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
-namespace BTCPayServer.HostedServices
+namespace BTCPayServer.HostedServices;
+
+public abstract class BaseAsyncService : IHostedService
 {
-    public abstract class BaseAsyncService : IHostedService
+    private readonly CancellationTokenSource _Cts = new CancellationTokenSource();
+    protected Task[] _Tasks;
+    public readonly Logs Logs;
+    public BaseAsyncService(Logs logs)
     {
-        private CancellationTokenSource _Cts = new CancellationTokenSource();
-        protected Task[] _Tasks;
-        public readonly Logs Logs;
-        public BaseAsyncService(Logs logs)
-        {
-            Logs = logs;
-        }
+        Logs = logs;
+    }
 
-        public virtual Task StartAsync(CancellationToken cancellationToken)
-        {
-            _Tasks = InitializeTasks();
-            return Task.CompletedTask;
-        }
+    public virtual Task StartAsync(CancellationToken cancellationToken)
+    {
+        _Tasks = InitializeTasks();
+        return Task.CompletedTask;
+    }
 
-        internal abstract Task[] InitializeTasks();
+    internal abstract Task[] InitializeTasks();
 
-        protected CancellationToken Cancellation
-        {
-            get { return _Cts.Token; }
-        }
+    protected CancellationToken Cancellation
+    {
+        get { return _Cts.Token; }
+    }
 
-        protected async Task CreateLoopTask(Func<Task> act, [CallerMemberName] string caller = null)
+    protected async Task CreateLoopTask(Func<Task> act, [CallerMemberName] string caller = null)
+    {
+        await new SynchronizationContextRemover();
+        while (!_Cts.IsCancellationRequested)
         {
-            await new SynchronizationContextRemover();
-            while (!_Cts.IsCancellationRequested)
+            try
             {
+                await act();
+            }
+            catch (OperationCanceledException) when (_Cts.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                Logs.PayServer.LogWarning(ex, caller + " failed");
                 try
                 {
-                    await act();
+                    await Task.Delay(TimeSpan.FromMinutes(1), _Cts.Token);
                 }
-                catch (OperationCanceledException) when (_Cts.IsCancellationRequested)
-                {
-                }
-                catch (Exception ex)
-                {
-                    Logs.PayServer.LogWarning(ex, caller + " failed");
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromMinutes(1), _Cts.Token);
-                    }
-                    catch (OperationCanceledException) when (_Cts.IsCancellationRequested) { }
-                }
+                catch (OperationCanceledException) when (_Cts.IsCancellationRequested) { }
             }
         }
+    }
 
-        public CancellationToken CancellationToken => _Cts.Token;
+    public CancellationToken CancellationToken => _Cts.Token;
 
-        public virtual async Task StopAsync(CancellationToken cancellationToken)
+    public virtual async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_Cts != null)
         {
-            if (_Cts != null)
+            _Cts.Cancel();
+            if (_Tasks != null)
             {
-                _Cts.Cancel();
-                if (_Tasks != null)
-                    await Task.WhenAll(_Tasks);
+                await Task.WhenAll(_Tasks);
             }
-            Logs.PayServer.LogInformation($"{this.GetType().Name} successfully exited...");
         }
+        Logs.PayServer.LogInformation($"{GetType().Name} successfully exited...");
     }
 }

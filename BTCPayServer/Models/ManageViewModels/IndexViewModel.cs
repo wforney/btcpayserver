@@ -1,21 +1,20 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace BTCPayServer.Models.ManageViewModels
+namespace BTCPayServer.Models.ManageViewModels;
+
+public class IndexViewModel
 {
-    public class IndexViewModel
+    public string Username { get; set; }
+
+
+    [Required]
+    [EmailAddress]
+    [MaxLength(50)]
+    public string Email
     {
-        public string Username { get; set; }
-
-
-        [Required]
-        [EmailAddress]
-        [MaxLength(50)]
-        public string Email
-        {
-            get; set;
-        }
-
-        public bool IsEmailConfirmed { get; set; }
-
+        get; set;
     }
+
+    public bool IsEmailConfirmed { get; set; }
+
 }

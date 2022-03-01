@@ -1,13 +1,10 @@
-using System.Collections.Generic;
+namespace BTCPayServer.Configuration;
 
-namespace BTCPayServer.Configuration
+public class NBXplorerOptions
 {
-    public class NBXplorerOptions
+    public List<NBXplorerConnectionSetting> NBXplorerConnectionSettings
     {
-        public List<NBXplorerConnectionSetting> NBXplorerConnectionSettings
-        {
-            get;
-            set;
-        } = new List<NBXplorerConnectionSetting>();
-    }
+        get;
+        set;
+    } = new List<NBXplorerConnectionSetting>();
 }

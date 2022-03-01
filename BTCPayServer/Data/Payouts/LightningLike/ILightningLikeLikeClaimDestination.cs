@@ -1,6 +1,5 @@
-namespace BTCPayServer.Data.Payouts.LightningLike
+namespace BTCPayServer.Data.Payouts.LightningLike;
+
+public interface ILightningLikeLikeClaimDestination : IClaimDestination
 {
-    public interface ILightningLikeLikeClaimDestination : IClaimDestination
-    {
-    }
 }

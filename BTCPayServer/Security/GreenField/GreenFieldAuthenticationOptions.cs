@@ -1,8 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 
-namespace BTCPayServer.Security.Greenfield
+namespace BTCPayServer.Security.Greenfield;
+
+public class GreenfieldAuthenticationOptions : AuthenticationSchemeOptions
 {
-    public class GreenfieldAuthenticationOptions : AuthenticationSchemeOptions
-    {
-    }
 }

@@ -1,7 +1,6 @@
-namespace BTCPayServer.Views.Server
+namespace BTCPayServer.Views.Server;
+
+public enum ServerNavPages
 {
-    public enum ServerNavPages
-    {
-        Index, Users, Emails, Policies, Theme, Services, Maintenance, Logs, Files, Plugins
-    }
+    Index, Users, Emails, Policies, Theme, Services, Maintenance, Logs, Files, Plugins
 }

@@ -1,12 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+namespace BTCPayServer.Events;
 
-namespace BTCPayServer.Events
+public interface IHasInvoiceId
 {
-    public interface IHasInvoiceId
-    {
-        string InvoiceId { get; }
-    }
+    string InvoiceId { get; }
 }

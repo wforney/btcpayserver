@@ -1,102 +1,97 @@
-using System;
-using System.Collections.Generic;
-using System.Text;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
 
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class WebhookInvoiceEvent : WebhookEvent
 {
-    public class WebhookInvoiceEvent : WebhookEvent
+    public WebhookInvoiceEvent()
     {
-        public WebhookInvoiceEvent()
-        {
-        }
-
-        public WebhookInvoiceEvent(WebhookEventType evtType)
-        {
-            this.Type = evtType;
-        }
-
-        [JsonProperty(Order = 1)] public string StoreId { get; set; }
-        [JsonProperty(Order = 2)] public string InvoiceId { get; set; }
     }
 
-    public class WebhookInvoiceSettledEvent : WebhookInvoiceEvent
+    public WebhookInvoiceEvent(WebhookEventType evtType)
     {
-        public WebhookInvoiceSettledEvent()
-        {
-        }
-
-        public WebhookInvoiceSettledEvent(WebhookEventType evtType) : base(evtType)
-        {
-        }
-
-        public bool ManuallyMarked { get; set; }
+        Type = evtType;
     }
 
-    public class WebhookInvoiceInvalidEvent : WebhookInvoiceEvent
+    [JsonProperty(Order = 1)] public string StoreId { get; set; }
+    [JsonProperty(Order = 2)] public string InvoiceId { get; set; }
+}
+
+public class WebhookInvoiceSettledEvent : WebhookInvoiceEvent
+{
+    public WebhookInvoiceSettledEvent()
     {
-        public WebhookInvoiceInvalidEvent()
-        {
-        }
-
-        public WebhookInvoiceInvalidEvent(WebhookEventType evtType) : base(evtType)
-        {
-        }
-
-        public bool ManuallyMarked { get; set; }
     }
 
-    public class WebhookInvoiceProcessingEvent : WebhookInvoiceEvent
+    public WebhookInvoiceSettledEvent(WebhookEventType evtType) : base(evtType)
     {
-        public WebhookInvoiceProcessingEvent()
-        {
-        }
-
-        public WebhookInvoiceProcessingEvent(WebhookEventType evtType) : base(evtType)
-        {
-        }
-
-        public bool OverPaid { get; set; }
     }
 
-    public class WebhookInvoiceReceivedPaymentEvent : WebhookInvoiceEvent
+    public bool ManuallyMarked { get; set; }
+}
+
+public class WebhookInvoiceInvalidEvent : WebhookInvoiceEvent
+{
+    public WebhookInvoiceInvalidEvent()
     {
-        public WebhookInvoiceReceivedPaymentEvent()
-        {
-        }
-
-        public WebhookInvoiceReceivedPaymentEvent(WebhookEventType evtType) : base(evtType)
-        {
-        }
-
-        public bool AfterExpiration { get; set; }
-        public string PaymentMethod { get; set; }
-        public InvoicePaymentMethodDataModel.Payment Payment { get; set; }
-        public bool OverPaid { get; set; }
     }
 
-    public class WebhookInvoicePaymentSettledEvent : WebhookInvoiceReceivedPaymentEvent
+    public WebhookInvoiceInvalidEvent(WebhookEventType evtType) : base(evtType)
     {
-        public WebhookInvoicePaymentSettledEvent()
-        {
-        }
-
-        public WebhookInvoicePaymentSettledEvent(WebhookEventType evtType) : base(evtType)
-        {
-        }
     }
 
-    public class WebhookInvoiceExpiredEvent : WebhookInvoiceEvent
+    public bool ManuallyMarked { get; set; }
+}
+
+public class WebhookInvoiceProcessingEvent : WebhookInvoiceEvent
+{
+    public WebhookInvoiceProcessingEvent()
     {
-        public WebhookInvoiceExpiredEvent()
-        {
-        }
-
-        public WebhookInvoiceExpiredEvent(WebhookEventType evtType) : base(evtType)
-        {
-        }
-
-        public bool PartiallyPaid { get; set; }
     }
+
+    public WebhookInvoiceProcessingEvent(WebhookEventType evtType) : base(evtType)
+    {
+    }
+
+    public bool OverPaid { get; set; }
+}
+
+public class WebhookInvoiceReceivedPaymentEvent : WebhookInvoiceEvent
+{
+    public WebhookInvoiceReceivedPaymentEvent()
+    {
+    }
+
+    public WebhookInvoiceReceivedPaymentEvent(WebhookEventType evtType) : base(evtType)
+    {
+    }
+
+    public bool AfterExpiration { get; set; }
+    public string PaymentMethod { get; set; }
+    public InvoicePaymentMethodDataModel.Payment Payment { get; set; }
+    public bool OverPaid { get; set; }
+}
+
+public class WebhookInvoicePaymentSettledEvent : WebhookInvoiceReceivedPaymentEvent
+{
+    public WebhookInvoicePaymentSettledEvent()
+    {
+    }
+
+    public WebhookInvoicePaymentSettledEvent(WebhookEventType evtType) : base(evtType)
+    {
+    }
+}
+
+public class WebhookInvoiceExpiredEvent : WebhookInvoiceEvent
+{
+    public WebhookInvoiceExpiredEvent()
+    {
+    }
+
+    public WebhookInvoiceExpiredEvent(WebhookEventType evtType) : base(evtType)
+    {
+    }
+
+    public bool PartiallyPaid { get; set; }
 }

@@ -1,9 +1,8 @@
 using NBitcoin;
 
-namespace BTCPayServer.Data
+namespace BTCPayServer.Data;
+
+public interface IBitcoinLikeClaimDestination : IClaimDestination
 {
-    public interface IBitcoinLikeClaimDestination : IClaimDestination
-    {
-        BitcoinAddress Address { get; }
-    }
+    BitcoinAddress Address { get; }
 }

@@ -1,48 +1,52 @@
-using System.Collections.Generic;
 using BTCPayServer.Client.JsonConverters;
 using BTCPayServer.Lightning;
 using BTCPayServer.Payments.Lightning;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace BTCPayServer.Payments
+namespace BTCPayServer.Payments;
+
+public class LNURLPayPaymentMethodDetails : LightningLikePaymentMethodDetails
 {
-    public class LNURLPayPaymentMethodDetails : LightningLikePaymentMethodDetails
+    public LightningSupportedPaymentMethod LightningSupportedPaymentMethod { get; set; }
+
+    [JsonConverter(typeof(LightMoneyJsonConverter))]
+    public LightMoney GeneratedBoltAmount { get; set; }
+
+    public string BTCPayInvoiceId { get; set; }
+    public bool Bech32Mode { get; set; }
+
+    public string ProvidedComment { get; set; }
+    public string ConsumedLightningAddress { get; set; }
+
+    public override PaymentType GetPaymentType()
     {
-        public LightningSupportedPaymentMethod LightningSupportedPaymentMethod { get; set; }
+        return LNURLPayPaymentType.Instance;
+    }
 
-        [JsonConverter(typeof(LightMoneyJsonConverter))]
-        public LightMoney GeneratedBoltAmount { get; set; }
-
-        public string BTCPayInvoiceId { get; set; }
-        public bool Bech32Mode { get; set; }
-
-        public string ProvidedComment { get; set; }
-        public string ConsumedLightningAddress { get; set; }
-
-        public override PaymentType GetPaymentType()
+    public override string GetAdditionalDataPartialName()
+    {
+        if (string.IsNullOrEmpty(ProvidedComment) && string.IsNullOrEmpty(ConsumedLightningAddress))
         {
-            return LNURLPayPaymentType.Instance;
+            return null;
         }
 
-        public override string GetAdditionalDataPartialName()
-        {
-            if (string.IsNullOrEmpty(ProvidedComment) && string.IsNullOrEmpty(ConsumedLightningAddress))
-            {
-                return null;
-            }
+        return "LNURL/AdditionalPaymentMethodDetails";
+    }
 
-            return "LNURL/AdditionalPaymentMethodDetails";
+    public override JObject GetAdditionalData()
+    {
+        JObject result = base.GetAdditionalData();
+        if (!string.IsNullOrEmpty(ProvidedComment))
+        {
+            result.Add("providedComment", new JValue(ProvidedComment));
         }
 
-        public override JObject GetAdditionalData()
+        if (!string.IsNullOrEmpty(ConsumedLightningAddress))
         {
-            var result = base.GetAdditionalData();
-            if (!string.IsNullOrEmpty(ProvidedComment))
-                result.Add("providedComment", new JValue(ProvidedComment));
-            if (!string.IsNullOrEmpty(ConsumedLightningAddress))
-                result.Add("consumedLightningAddress", new JValue(ConsumedLightningAddress));
-            return result;
+            result.Add("consumedLightningAddress", new JValue(ConsumedLightningAddress));
         }
+
+        return result;
     }
 }

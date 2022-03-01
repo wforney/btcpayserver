@@ -1,11 +1,9 @@
-using System.Collections.Generic;
 using BTCPayServer.Abstractions.Contracts;
 
-namespace BTCPayServer.Components.Notifications
+namespace BTCPayServer.Components.Notifications;
+
+public class NotificationsViewModel
 {
-    public class NotificationsViewModel
-    {
-        public int UnseenCount { get; set; }
-        public List<NotificationViewModel> Last5 { get; set; }
-    }
+    public int UnseenCount { get; set; }
+    public List<NotificationViewModel> Last5 { get; set; }
 }

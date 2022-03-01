@@ -1,46 +1,43 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using NBitcoin;
 using NBXplorer;
 
-namespace BTCPayServer
+namespace BTCPayServer;
+
+public partial class BTCPayNetworkProvider
 {
-    public partial class BTCPayNetworkProvider
+    protected readonly Dictionary<string, BTCPayNetworkBase> _Networks = new Dictionary<string, BTCPayNetworkBase>();
+
+    private readonly NBXplorerNetworkProvider _NBXplorerNetworkProvider;
+    public NBXplorerNetworkProvider NBXplorerNetworkProvider
     {
-        protected readonly Dictionary<string, BTCPayNetworkBase> _Networks = new Dictionary<string, BTCPayNetworkBase>();
-
-        private readonly NBXplorerNetworkProvider _NBXplorerNetworkProvider;
-        public NBXplorerNetworkProvider NBXplorerNetworkProvider
+        get
         {
-            get
+            return _NBXplorerNetworkProvider;
+        }
+    }
+
+    private BTCPayNetworkProvider(BTCPayNetworkProvider unfiltered, string[] cryptoCodes)
+    {
+        NetworkType = unfiltered.NetworkType;
+        _NBXplorerNetworkProvider = new NBXplorerNetworkProvider(unfiltered.NetworkType);
+        _Networks = new Dictionary<string, BTCPayNetworkBase>();
+        cryptoCodes = cryptoCodes.Select(c => c.ToUpperInvariant()).ToArray();
+        foreach (KeyValuePair<string, BTCPayNetworkBase> network in unfiltered._Networks)
+        {
+            if (cryptoCodes.Contains(network.Key))
             {
-                return _NBXplorerNetworkProvider;
+                _Networks.Add(network.Key, network.Value);
             }
         }
-
-        BTCPayNetworkProvider(BTCPayNetworkProvider unfiltered, string[] cryptoCodes)
-        {
-            NetworkType = unfiltered.NetworkType;
-            _NBXplorerNetworkProvider = new NBXplorerNetworkProvider(unfiltered.NetworkType);
-            _Networks = new Dictionary<string, BTCPayNetworkBase>();
-            cryptoCodes = cryptoCodes.Select(c => c.ToUpperInvariant()).ToArray();
-            foreach (var network in unfiltered._Networks)
-            {
-                if (cryptoCodes.Contains(network.Key))
-                {
-                    _Networks.Add(network.Key, network.Value);
-                }
-            }
-        }
+    }
 
 
-        public ChainName NetworkType { get; private set; }
-        public BTCPayNetworkProvider(ChainName networkType)
-        {
-            _NBXplorerNetworkProvider = new NBXplorerNetworkProvider(networkType);
-            NetworkType = networkType;
-            InitBitcoin();
+    public ChainName NetworkType { get; private set; }
+    public BTCPayNetworkProvider(ChainName networkType)
+    {
+        _NBXplorerNetworkProvider = new NBXplorerNetworkProvider(networkType);
+        NetworkType = networkType;
+        InitBitcoin();
 #if ALTCOINS
             InitLiquid();
             InitLiquidAssets();
@@ -81,59 +78,63 @@ namespace BTCPayServer
             //InitBPlus();
             //InitUfo();
 #endif
+    }
+
+    /// <summary>
+    /// Keep only the specified crypto
+    /// </summary>
+    /// <param name="cryptoCodes">Crypto to support</param>
+    /// <returns></returns>
+    public BTCPayNetworkProvider Filter(string[] cryptoCodes)
+    {
+        return new BTCPayNetworkProvider(this, cryptoCodes);
+    }
+
+    public BTCPayNetwork BTC => GetNetwork<BTCPayNetwork>("BTC");
+    public BTCPayNetworkBase DefaultNetwork => BTC ?? GetAll().First();
+
+    public void Add(BTCPayNetwork network)
+    {
+        if (network.NBitcoinNetwork == null)
+        {
+            return;
         }
 
-        /// <summary>
-        /// Keep only the specified crypto
-        /// </summary>
-        /// <param name="cryptoCodes">Crypto to support</param>
-        /// <returns></returns>
-        public BTCPayNetworkProvider Filter(string[] cryptoCodes)
-        {
-            return new BTCPayNetworkProvider(this, cryptoCodes);
-        }
+        Add(network as BTCPayNetworkBase);
+    }
+    public void Add(BTCPayNetworkBase network)
+    {
+        _Networks.Add(network.CryptoCode.ToUpperInvariant(), network);
+    }
 
-        public BTCPayNetwork BTC => GetNetwork<BTCPayNetwork>("BTC");
-        public BTCPayNetworkBase DefaultNetwork => BTC ?? GetAll().First();
+    public IEnumerable<BTCPayNetworkBase> GetAll()
+    {
+        return _Networks.Values.ToArray();
+    }
 
-        public void Add(BTCPayNetwork network)
+    public bool Support(string cryptoCode)
+    {
+        return _Networks.ContainsKey(cryptoCode.ToUpperInvariant());
+    }
+    public BTCPayNetworkBase GetNetwork(string cryptoCode)
+    {
+        return GetNetwork<BTCPayNetworkBase>(cryptoCode.ToUpperInvariant());
+    }
+    public T GetNetwork<T>(string cryptoCode) where T : BTCPayNetworkBase
+    {
+        ArgumentNullException.ThrowIfNull(cryptoCode);
+        if (!_Networks.TryGetValue(cryptoCode.ToUpperInvariant(), out BTCPayNetworkBase network))
         {
-            if (network.NBitcoinNetwork == null)
-                return;
-            Add(network as BTCPayNetworkBase);
-        }
-        public void Add(BTCPayNetworkBase network)
-        {
-            _Networks.Add(network.CryptoCode.ToUpperInvariant(), network);
-        }
-
-        public IEnumerable<BTCPayNetworkBase> GetAll()
-        {
-            return _Networks.Values.ToArray();
-        }
-
-        public bool Support(string cryptoCode)
-        {
-            return _Networks.ContainsKey(cryptoCode.ToUpperInvariant());
-        }
-        public BTCPayNetworkBase GetNetwork(string cryptoCode)
-        {
-            return GetNetwork<BTCPayNetworkBase>(cryptoCode.ToUpperInvariant());
-        }
-        public T GetNetwork<T>(string cryptoCode) where T : BTCPayNetworkBase
-        {
-            ArgumentNullException.ThrowIfNull(cryptoCode);
-            if (!_Networks.TryGetValue(cryptoCode.ToUpperInvariant(), out BTCPayNetworkBase network))
+            if (cryptoCode == "XBT")
             {
-                if (cryptoCode == "XBT")
-                    return GetNetwork<T>("BTC");
+                return GetNetwork<T>("BTC");
             }
-            return network as T;
         }
-        public bool TryGetNetwork<T>(string cryptoCode, out T network) where T : BTCPayNetworkBase
-        {
-            network = GetNetwork<T>(cryptoCode);
-            return network != null;
-        }
+        return network as T;
+    }
+    public bool TryGetNetwork<T>(string cryptoCode, out T network) where T : BTCPayNetworkBase
+    {
+        network = GetNetwork<T>(cryptoCode);
+        return network != null;
     }
 }

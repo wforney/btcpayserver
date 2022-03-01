@@ -1,36 +1,33 @@
-using System;
-using System.Threading.Tasks;
 using BTCPayServer.Logging;
 using BTCPayServer.Services;
 
-namespace BTCPayServer.HostedServices
+namespace BTCPayServer.HostedServices;
+
+public class DelayedTransactionBroadcasterHostedService : BaseAsyncService
 {
-    public class DelayedTransactionBroadcasterHostedService : BaseAsyncService
+    private readonly DelayedTransactionBroadcaster _transactionBroadcaster;
+
+    public DelayedTransactionBroadcasterHostedService(DelayedTransactionBroadcaster transactionBroadcaster, Logs logs) : base(logs)
     {
-        private readonly DelayedTransactionBroadcaster _transactionBroadcaster;
+        _transactionBroadcaster = transactionBroadcaster;
+    }
 
-        public DelayedTransactionBroadcasterHostedService(DelayedTransactionBroadcaster transactionBroadcaster, Logs logs) : base(logs)
+    internal override Task[] InitializeTasks()
+    {
+        return new Task[]
         {
-            _transactionBroadcaster = transactionBroadcaster;
-        }
-
-        internal override Task[] InitializeTasks()
-        {
-            return new Task[]
-            {
                 CreateLoopTask(Rebroadcast)
-            };
-        }
+        };
+    }
 
-        public TimeSpan PollInternal { get; set; } = TimeSpan.FromMinutes(1.0);
+    public TimeSpan PollInternal { get; set; } = TimeSpan.FromMinutes(1.0);
 
-        async Task Rebroadcast()
+    private async Task Rebroadcast()
+    {
+        while (true)
         {
-            while (true)
-            {
-                await _transactionBroadcaster.ProcessAll(Cancellation);
-                await Task.Delay(PollInternal, Cancellation);
-            }
+            await _transactionBroadcaster.ProcessAll(Cancellation);
+            await Task.Delay(PollInternal, Cancellation);
         }
     }
 }

@@ -1,9 +1,4 @@
-using System;
 using System.Globalization;
-using System.Security.Claims;
-using System.Linq;
-using System.Net.Http;
-using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Constants;
 using BTCPayServer.Abstractions.Extensions;
 using BTCPayServer.Abstractions.Models;
@@ -19,776 +14,789 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Logging;
 using NBitcoin.DataEncoders;
 using Newtonsoft.Json.Linq;
 using NicolasDorier.RateLimits;
 
-namespace BTCPayServer.Controllers
+namespace BTCPayServer.Controllers;
+
+[Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie)]
+public class UIAccountController : Controller
 {
-    [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie)]
-    public class UIAccountController : Controller
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly RoleManager<IdentityRole> _RoleManager;
+    private readonly SettingsRepository _SettingsRepository;
+    private readonly Configuration.BTCPayServerOptions _Options;
+    private readonly BTCPayServerEnvironment _btcPayServerEnvironment;
+    private readonly Fido2Service _fido2Service;
+    private readonly LnurlAuthService _lnurlAuthService;
+    private readonly LinkGenerator _linkGenerator;
+    private readonly UserLoginCodeService _userLoginCodeService;
+    private readonly EventAggregator _eventAggregator;
+    private readonly ILogger _logger;
+
+    public Logs Logs { get; }
+
+    public UIAccountController(
+        UserManager<ApplicationUser> userManager,
+        RoleManager<IdentityRole> roleManager,
+        SignInManager<ApplicationUser> signInManager,
+        SettingsRepository settingsRepository,
+        Configuration.BTCPayServerOptions options,
+        BTCPayServerEnvironment btcPayServerEnvironment,
+        EventAggregator eventAggregator,
+        Fido2Service fido2Service,
+        UserLoginCodeService userLoginCodeService,
+        LnurlAuthService lnurlAuthService,
+        LinkGenerator linkGenerator,
+        Logs logs)
     {
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly SignInManager<ApplicationUser> _signInManager;
-        readonly RoleManager<IdentityRole> _RoleManager;
-        readonly SettingsRepository _SettingsRepository;
-        readonly Configuration.BTCPayServerOptions _Options;
-        private readonly BTCPayServerEnvironment _btcPayServerEnvironment;
-        private readonly Fido2Service _fido2Service;
-        private readonly LnurlAuthService _lnurlAuthService;
-        private readonly LinkGenerator _linkGenerator;
-        private readonly UserLoginCodeService _userLoginCodeService;
-        private readonly EventAggregator _eventAggregator;
-        readonly ILogger _logger;
+        _userManager = userManager;
+        _signInManager = signInManager;
+        _RoleManager = roleManager;
+        _SettingsRepository = settingsRepository;
+        _Options = options;
+        _btcPayServerEnvironment = btcPayServerEnvironment;
+        _fido2Service = fido2Service;
+        _lnurlAuthService = lnurlAuthService;
+        _linkGenerator = linkGenerator;
+        _userLoginCodeService = userLoginCodeService;
+        _eventAggregator = eventAggregator;
+        _logger = logs.PayServer;
+        Logs = logs;
+    }
 
-        public Logs Logs { get; }
+    [TempData]
+    public string ErrorMessage
+    {
+        get; set;
+    }
 
-        public UIAccountController(
-            UserManager<ApplicationUser> userManager,
-            RoleManager<IdentityRole> roleManager,
-            SignInManager<ApplicationUser> signInManager,
-            SettingsRepository settingsRepository,
-            Configuration.BTCPayServerOptions options,
-            BTCPayServerEnvironment btcPayServerEnvironment,
-            EventAggregator eventAggregator,
-            Fido2Service fido2Service,
-            UserLoginCodeService userLoginCodeService,
-            LnurlAuthService lnurlAuthService,
-            LinkGenerator linkGenerator,
-            Logs logs)
+    [HttpGet("/login")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Login(string returnUrl = null, string email = null)
+    {
+        if (User.Identity.IsAuthenticated && string.IsNullOrEmpty(returnUrl))
         {
-            _userManager = userManager;
-            _signInManager = signInManager;
-            _RoleManager = roleManager;
-            _SettingsRepository = settingsRepository;
-            _Options = options;
-            _btcPayServerEnvironment = btcPayServerEnvironment;
-            _fido2Service = fido2Service;
-            _lnurlAuthService = lnurlAuthService;
-            _linkGenerator = linkGenerator;
-            _userLoginCodeService = userLoginCodeService;
-            _eventAggregator = eventAggregator;
-            _logger = logs.PayServer;
-            Logs = logs;
+            return await RedirectToLocal();
+        }
+        // Clear the existing external cookie to ensure a clean login process
+        await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+
+        if (!CanLoginOrRegister())
+        {
+            SetInsecureFlags();
         }
 
-        [TempData]
-        public string ErrorMessage
-        {
-            get; set;
-        }
+        ViewData["ReturnUrl"] = returnUrl;
+        return View(nameof(Login), new LoginViewModel() { Email = email });
+    }
 
-        [HttpGet("/login")]
-        [AllowAnonymous]
-        public async Task<IActionResult> Login(string returnUrl = null, string email = null)
-        {
-            if (User.Identity.IsAuthenticated && string.IsNullOrEmpty(returnUrl))
-                return await RedirectToLocal();
-            // Clear the existing external cookie to ensure a clean login process
-            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
 
-            if (!CanLoginOrRegister())
+    [HttpPost("/login/code")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    [RateLimitsFilter(ZoneLimits.Login, Scope = RateLimitsScope.RemoteAddress)]
+
+    public async Task<IActionResult> LoginWithCode(string loginCode, string returnUrl = null)
+    {
+        if (!string.IsNullOrEmpty(loginCode))
+        {
+            var userId = _userLoginCodeService.Verify(loginCode);
+            if (userId is null)
             {
-                SetInsecureFlags();
+                ModelState.AddModelError(string.Empty,
+                    "Login code was invalid");
+                return await Login(returnUrl, null);
             }
+            ApplicationUser user = await _userManager.FindByIdAsync(userId);
 
-            ViewData["ReturnUrl"] = returnUrl;
-            return View(nameof(Login), new LoginViewModel() { Email = email });
+            _logger.LogInformation("User with ID {UserId} logged in with a login code.", user.Id);
+            await _signInManager.SignInAsync(user, false, "LoginCode");
+            return await RedirectToLocal(returnUrl);
+        }
+        return await Login(returnUrl, null);
+    }
+
+    [HttpPost("/login")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    [RateLimitsFilter(ZoneLimits.Login, Scope = RateLimitsScope.RemoteAddress)]
+    public async Task<IActionResult> Login(LoginViewModel model, string returnUrl = null)
+    {
+        if (!CanLoginOrRegister())
+        {
+            return RedirectToAction("Login");
         }
 
-
-        [HttpPost("/login/code")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        [RateLimitsFilter(ZoneLimits.Login, Scope = RateLimitsScope.RemoteAddress)]
-
-        public async Task<IActionResult> LoginWithCode(string loginCode, string returnUrl = null)
+        ViewData["ReturnUrl"] = returnUrl;
+        if (ModelState.IsValid)
         {
-            if (!string.IsNullOrEmpty(loginCode))
+            // Require the user to have a confirmed email before they can log on.
+            ApplicationUser user = await _userManager.FindByEmailAsync(model.Email);
+            if (user != null)
             {
-                var userId = _userLoginCodeService.Verify(loginCode);
-                if (userId is null)
+                if (user.RequiresEmailConfirmation && !await _userManager.IsEmailConfirmedAsync(user))
                 {
                     ModelState.AddModelError(string.Empty,
-                        "Login code was invalid");
-                    return await Login(returnUrl, null);
-                }
-                var user = await _userManager.FindByIdAsync(userId);
-
-                _logger.LogInformation("User with ID {UserId} logged in with a login code.", user.Id);
-                await _signInManager.SignInAsync(user, false, "LoginCode");
-                return await RedirectToLocal(returnUrl);
-            }
-            return await Login(returnUrl, null);
-        }
-
-        [HttpPost("/login")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        [RateLimitsFilter(ZoneLimits.Login, Scope = RateLimitsScope.RemoteAddress)]
-        public async Task<IActionResult> Login(LoginViewModel model, string returnUrl = null)
-        {
-            if (!CanLoginOrRegister())
-            {
-                return RedirectToAction("Login");
-            }
-
-            ViewData["ReturnUrl"] = returnUrl;
-            if (ModelState.IsValid)
-            {
-                // Require the user to have a confirmed email before they can log on.
-                var user = await _userManager.FindByEmailAsync(model.Email);
-                if (user != null)
-                {
-                    if (user.RequiresEmailConfirmation && !await _userManager.IsEmailConfirmedAsync(user))
-                    {
-                        ModelState.AddModelError(string.Empty,
-                                      "You must have a confirmed email to log in.");
-                        return View(model);
-                    }
-                }
-                else
-                {
-                    ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+                                  "You must have a confirmed email to log in.");
                     return View(model);
                 }
+            }
+            else
+            {
+                ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+                return View(model);
+            }
 
-                var fido2Devices = await _fido2Service.HasCredentials(user.Id);
-                var lnurlAuthCredentials = await _lnurlAuthService.HasCredentials(user.Id);
-                if (!await _userManager.IsLockedOutAsync(user) &&  (fido2Devices  || lnurlAuthCredentials))
+            var fido2Devices = await _fido2Service.HasCredentials(user.Id);
+            var lnurlAuthCredentials = await _lnurlAuthService.HasCredentials(user.Id);
+            if (!await _userManager.IsLockedOutAsync(user) && (fido2Devices || lnurlAuthCredentials))
+            {
+                if (await _userManager.CheckPasswordAsync(user, model.Password))
                 {
-                    if (await _userManager.CheckPasswordAsync(user, model.Password))
+                    LoginWith2faViewModel twoFModel = null;
+
+                    if (user.TwoFactorEnabled)
                     {
-                        LoginWith2faViewModel twoFModel = null;
-
-                        if (user.TwoFactorEnabled)
-                        {
-                            // we need to do an actual sign in attempt so that 2fa can function in next step
-                            await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: true);
-                            twoFModel = new LoginWith2faViewModel
-                            {
-                                RememberMe = model.RememberMe
-                            };
-                        }
-
-                        return View("SecondaryLogin", new SecondaryLoginViewModel()
-                        {
-                            LoginWith2FaViewModel = twoFModel,
-                            LoginWithFido2ViewModel = fido2Devices? await BuildFido2ViewModel(model.RememberMe, user): null, 
-                            LoginWithLNURLAuthViewModel = lnurlAuthCredentials? await BuildLNURLAuthViewModel(model.RememberMe, user): null, 
-                        });
-                    }
-                    else
-                    {
-                        var incrementAccessFailedResult = await _userManager.AccessFailedAsync(user);
-                        ModelState.AddModelError(string.Empty, "Invalid login attempt.");
-                        return View(model);
-
-                    }
-                }
-
-
-                var result = await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: true);
-                if (result.Succeeded)
-                {
-                    _logger.LogInformation($"User '{user.Id}' logged in.");
-                    return await RedirectToLocal(returnUrl);
-                }
-                if (result.RequiresTwoFactor)
-                {
-                    return View("SecondaryLogin", new SecondaryLoginViewModel()
-                    {
-                        LoginWith2FaViewModel = new LoginWith2faViewModel()
+                        // we need to do an actual sign in attempt so that 2fa can function in next step
+                        await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: true);
+                        twoFModel = new LoginWith2faViewModel
                         {
                             RememberMe = model.RememberMe
-                        }
+                        };
+                    }
+
+                    return View("SecondaryLogin", new SecondaryLoginViewModel()
+                    {
+                        LoginWith2FaViewModel = twoFModel,
+                        LoginWithFido2ViewModel = fido2Devices ? await BuildFido2ViewModel(model.RememberMe, user) : null,
+                        LoginWithLNURLAuthViewModel = lnurlAuthCredentials ? await BuildLNURLAuthViewModel(model.RememberMe, user) : null,
                     });
-                }
-                if (result.IsLockedOut)
-                {
-                    _logger.LogWarning($"User '{user.Id}' account locked out.");
-                    return RedirectToAction(nameof(Lockout));
                 }
                 else
                 {
+                    IdentityResult incrementAccessFailedResult = await _userManager.AccessFailedAsync(user);
                     ModelState.AddModelError(string.Empty, "Invalid login attempt.");
                     return View(model);
+
                 }
             }
 
-            // If we got this far, something failed, redisplay form
+
+            Microsoft.AspNetCore.Identity.SignInResult result = await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: true);
+            if (result.Succeeded)
+            {
+                _logger.LogInformation($"User '{user.Id}' logged in.");
+                return await RedirectToLocal(returnUrl);
+            }
+            if (result.RequiresTwoFactor)
+            {
+                return View("SecondaryLogin", new SecondaryLoginViewModel()
+                {
+                    LoginWith2FaViewModel = new LoginWith2faViewModel()
+                    {
+                        RememberMe = model.RememberMe
+                    }
+                });
+            }
+            if (result.IsLockedOut)
+            {
+                _logger.LogWarning($"User '{user.Id}' account locked out.");
+                return RedirectToAction(nameof(Lockout));
+            }
+            else
+            {
+                ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+                return View(model);
+            }
+        }
+
+        // If we got this far, something failed, redisplay form
+        return View(model);
+    }
+
+    private async Task<LoginWithFido2ViewModel> BuildFido2ViewModel(bool rememberMe, ApplicationUser user)
+    {
+        if (_btcPayServerEnvironment.IsSecure)
+        {
+            AssertionOptions r = await _fido2Service.RequestLogin(user.Id);
+            if (r is null)
+            {
+                return null;
+            }
+            return new LoginWithFido2ViewModel()
+            {
+                Data = r,
+                UserId = user.Id,
+                RememberMe = rememberMe
+            };
+        }
+        return null;
+    }
+
+
+    private async Task<LoginWithLNURLAuthViewModel> BuildLNURLAuthViewModel(bool rememberMe, ApplicationUser user)
+    {
+        if (_btcPayServerEnvironment.IsSecure)
+        {
+            var r = await _lnurlAuthService.RequestLogin(user.Id);
+            if (r is null)
+            {
+                return null;
+            }
+            return new LoginWithLNURLAuthViewModel()
+            {
+
+                RememberMe = rememberMe,
+                UserId = user.Id,
+                LNURLEndpoint = new Uri(_linkGenerator.GetUriByAction(
+                action: nameof(UILNURLAuthController.LoginResponse),
+                controller: "UILNURLAuth",
+                values: new { userId = user.Id, action = "login", tag = "login", k1 = Encoders.Hex.EncodeData(r) }, Request.Scheme, Request.Host, Request.PathBase))
+            };
+        }
+        return null;
+    }
+
+    [HttpPost("/login/lnurlauth")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> LoginWithLNURLAuth(LoginWithLNURLAuthViewModel viewModel, string returnUrl = null)
+    {
+        if (!CanLoginOrRegister())
+        {
+            return RedirectToAction("Login");
+        }
+
+        ViewData["ReturnUrl"] = returnUrl;
+        ApplicationUser user = await _userManager.FindByIdAsync(viewModel.UserId);
+
+        if (user == null)
+        {
+            return NotFound();
+        }
+
+        var errorMessage = string.Empty;
+        try
+        {
+            var k1 = Encoders.Hex.DecodeData(viewModel.LNURLEndpoint.ParseQueryString().Get("k1"));
+            if (_lnurlAuthService.FinalLoginStore.TryRemove(viewModel.UserId, out var storedk1) &&
+                storedk1.SequenceEqual(k1))
+            {
+                _lnurlAuthService.FinalLoginStore.TryRemove(viewModel.UserId, out _);
+                await _signInManager.SignInAsync(user, viewModel.RememberMe, "FIDO2");
+                _logger.LogInformation("User logged in.");
+                return await RedirectToLocal(returnUrl);
+            }
+
+            errorMessage = "Invalid login attempt.";
+        }
+        catch (Exception e)
+        {
+            errorMessage = e.Message;
+        }
+
+        ModelState.AddModelError(string.Empty, errorMessage);
+        return View("SecondaryLogin", new SecondaryLoginViewModel()
+        {
+
+            LoginWithFido2ViewModel = (await _fido2Service.HasCredentials(user.Id)) ? await BuildFido2ViewModel(viewModel.RememberMe, user) : null,
+            LoginWithLNURLAuthViewModel = viewModel,
+            LoginWith2FaViewModel = !user.TwoFactorEnabled
+                ? null
+                : new LoginWith2faViewModel()
+                {
+                    RememberMe = viewModel.RememberMe
+                }
+        });
+    }
+
+
+    [HttpPost("/login/fido2")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> LoginWithFido2(LoginWithFido2ViewModel viewModel, string returnUrl = null)
+    {
+        if (!CanLoginOrRegister())
+        {
+            return RedirectToAction("Login");
+        }
+
+        ViewData["ReturnUrl"] = returnUrl;
+        ApplicationUser user = await _userManager.FindByIdAsync(viewModel.UserId);
+
+        if (user == null)
+        {
+            return NotFound();
+        }
+
+        var errorMessage = string.Empty;
+        try
+        {
+            if (await _fido2Service.CompleteLogin(viewModel.UserId, JObject.Parse(viewModel.Response).ToObject<AuthenticatorAssertionRawResponse>()))
+            {
+                await _signInManager.SignInAsync(user, viewModel.RememberMe, "FIDO2");
+                _logger.LogInformation("User logged in.");
+                return await RedirectToLocal(returnUrl);
+            }
+
+            errorMessage = "Invalid login attempt.";
+        }
+        catch (Fido2VerificationException e)
+        {
+            errorMessage = e.Message;
+        }
+
+        ModelState.AddModelError(string.Empty, errorMessage);
+        viewModel.Response = null;
+        return View("SecondaryLogin", new SecondaryLoginViewModel()
+        {
+            LoginWithFido2ViewModel = viewModel,
+            LoginWithLNURLAuthViewModel = (await _lnurlAuthService.HasCredentials(user.Id)) ? await BuildLNURLAuthViewModel(viewModel.RememberMe, user) : null,
+            LoginWith2FaViewModel = !user.TwoFactorEnabled
+                ? null
+                : new LoginWith2faViewModel()
+                {
+                    RememberMe = viewModel.RememberMe
+                }
+        });
+    }
+    [HttpGet("/login/2fa")]
+    [AllowAnonymous]
+    public async Task<IActionResult> LoginWith2fa(bool rememberMe, string returnUrl = null)
+    {
+        if (!CanLoginOrRegister())
+        {
+            return RedirectToAction("Login");
+        }
+
+        // Ensure the user has gone through the username & password screen first
+        ApplicationUser user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
+
+        if (user == null)
+        {
+            throw new ApplicationException($"Unable to load two-factor authentication user.");
+        }
+
+        ViewData["ReturnUrl"] = returnUrl;
+
+        return View("SecondaryLogin", new SecondaryLoginViewModel()
+        {
+            LoginWith2FaViewModel = new LoginWith2faViewModel { RememberMe = rememberMe },
+            LoginWithFido2ViewModel = (await _fido2Service.HasCredentials(user.Id)) ? await BuildFido2ViewModel(rememberMe, user) : null,
+            LoginWithLNURLAuthViewModel = (await _lnurlAuthService.HasCredentials(user.Id)) ? await BuildLNURLAuthViewModel(rememberMe, user) : null,
+        });
+    }
+
+    [HttpPost("/login/2fa")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> LoginWith2fa(LoginWith2faViewModel model, bool rememberMe, string returnUrl = null)
+    {
+        if (!CanLoginOrRegister())
+        {
+            return RedirectToAction("Login");
+        }
+
+        if (!ModelState.IsValid)
+        {
             return View(model);
         }
 
-        private async Task<LoginWithFido2ViewModel> BuildFido2ViewModel(bool rememberMe, ApplicationUser user)
+        ApplicationUser user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
+        if (user == null)
         {
-            if (_btcPayServerEnvironment.IsSecure)
-            {
-                var r = await _fido2Service.RequestLogin(user.Id);
-                if (r is null)
-                {
-                    return null;
-                }
-                return new LoginWithFido2ViewModel()
-                {
-                    Data = r,
-                    UserId = user.Id,
-                    RememberMe = rememberMe
-                };
-            }
-            return null;
+            throw new ApplicationException($"Unable to load user with ID '{_userManager.GetUserId(User)}'.");
         }
 
+        var authenticatorCode = model.TwoFactorCode.Replace(" ", string.Empty, StringComparison.InvariantCulture).Replace("-", string.Empty, StringComparison.InvariantCulture);
 
-        private async Task<LoginWithLNURLAuthViewModel> BuildLNURLAuthViewModel(bool rememberMe, ApplicationUser user)
+        Microsoft.AspNetCore.Identity.SignInResult result = await _signInManager.TwoFactorAuthenticatorSignInAsync(authenticatorCode, rememberMe, model.RememberMachine);
+
+        if (result.Succeeded)
         {
-            if (_btcPayServerEnvironment.IsSecure)
-            {
-                var r = await _lnurlAuthService.RequestLogin(user.Id);
-                if (r is null)
-                {
-                    return null;
-                }
-                return new LoginWithLNURLAuthViewModel()
-                {
-                    
-                    RememberMe = rememberMe,
-                    UserId = user.Id,
-                    LNURLEndpoint = new Uri(_linkGenerator.GetUriByAction(
-                    action: nameof(UILNURLAuthController.LoginResponse),
-                    controller: "UILNURLAuth",
-                    values: new { userId = user.Id, action="login", tag="login", k1= Encoders.Hex.EncodeData(r)  }, Request.Scheme, Request.Host, Request.PathBase))
-                };
-            }
-            return null;
+            _logger.LogInformation("User with ID {UserId} logged in with 2fa.", user.Id);
+            return await RedirectToLocal(returnUrl);
         }
-        
-        [HttpPost("/login/lnurlauth")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> LoginWithLNURLAuth(LoginWithLNURLAuthViewModel viewModel, string returnUrl = null)
+        else if (result.IsLockedOut)
         {
-            if (!CanLoginOrRegister())
-            {
-                return RedirectToAction("Login");
-            }
-
-            ViewData["ReturnUrl"] = returnUrl;
-            var user = await _userManager.FindByIdAsync(viewModel.UserId);
-
-            if (user == null)
-            {
-                return NotFound();
-            }
-
-            var errorMessage = string.Empty;
-            try
-            {
-                var k1 = Encoders.Hex.DecodeData(viewModel.LNURLEndpoint.ParseQueryString().Get("k1"));
-                if (_lnurlAuthService.FinalLoginStore.TryRemove(viewModel.UserId, out var storedk1) &&
-                    storedk1.SequenceEqual(k1))
-                {
-                    _lnurlAuthService.FinalLoginStore.TryRemove(viewModel.UserId, out _);
-                    await _signInManager.SignInAsync(user, viewModel.RememberMe, "FIDO2");
-                    _logger.LogInformation("User logged in.");
-                    return await RedirectToLocal(returnUrl);
-                }
-
-                errorMessage = "Invalid login attempt.";
-            }
-            catch (Exception e)
-            {
-                errorMessage = e.Message;
-            }
-
-            ModelState.AddModelError(string.Empty, errorMessage);
+            _logger.LogWarning("User with ID {UserId} account locked out.", user.Id);
+            return RedirectToAction(nameof(Lockout));
+        }
+        else
+        {
+            _logger.LogWarning("Invalid authenticator code entered for user with ID {UserId}.", user.Id);
+            ModelState.AddModelError(string.Empty, "Invalid authenticator code.");
             return View("SecondaryLogin", new SecondaryLoginViewModel()
             {
-                
-                LoginWithFido2ViewModel = (await _fido2Service.HasCredentials(user.Id)) ? await BuildFido2ViewModel(viewModel.RememberMe, user) : null,
-                LoginWithLNURLAuthViewModel = viewModel,
-                LoginWith2FaViewModel = !user.TwoFactorEnabled
-                    ? null
-                    : new LoginWith2faViewModel()
-                    {
-                        RememberMe = viewModel.RememberMe
-                    }
-            });
-        }
-        
-
-        [HttpPost("/login/fido2")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> LoginWithFido2(LoginWithFido2ViewModel viewModel, string returnUrl = null)
-        {
-            if (!CanLoginOrRegister())
-            {
-                return RedirectToAction("Login");
-            }
-
-            ViewData["ReturnUrl"] = returnUrl;
-            var user = await _userManager.FindByIdAsync(viewModel.UserId);
-
-            if (user == null)
-            {
-                return NotFound();
-            }
-
-            var errorMessage = string.Empty;
-            try
-            {
-                if (await _fido2Service.CompleteLogin(viewModel.UserId, JObject.Parse(viewModel.Response).ToObject<AuthenticatorAssertionRawResponse>()))
-                {
-                    await _signInManager.SignInAsync(user, viewModel.RememberMe, "FIDO2");
-                    _logger.LogInformation("User logged in.");
-                    return await RedirectToLocal(returnUrl);
-                }
-
-                errorMessage = "Invalid login attempt.";
-            }
-            catch (Fido2VerificationException e)
-            {
-                errorMessage = e.Message;
-            }
-
-            ModelState.AddModelError(string.Empty, errorMessage);
-            viewModel.Response = null;
-            return View("SecondaryLogin", new SecondaryLoginViewModel()
-            {
-                LoginWithFido2ViewModel = viewModel,
-                LoginWithLNURLAuthViewModel = (await _lnurlAuthService.HasCredentials(user.Id)) ? await BuildLNURLAuthViewModel(viewModel.RememberMe, user) : null,
-                LoginWith2FaViewModel = !user.TwoFactorEnabled
-                    ? null
-                    : new LoginWith2faViewModel()
-                    {
-                        RememberMe = viewModel.RememberMe
-                    }
-            });
-        }
-        [HttpGet("/login/2fa")]
-        [AllowAnonymous]
-        public async Task<IActionResult> LoginWith2fa(bool rememberMe, string returnUrl = null)
-        {
-            if (!CanLoginOrRegister())
-            {
-                return RedirectToAction("Login");
-            }
-
-            // Ensure the user has gone through the username & password screen first
-            var user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
-
-            if (user == null)
-            {
-                throw new ApplicationException($"Unable to load two-factor authentication user.");
-            }
-
-            ViewData["ReturnUrl"] = returnUrl;
-
-            return View("SecondaryLogin", new SecondaryLoginViewModel()
-            {
-                LoginWith2FaViewModel = new LoginWith2faViewModel { RememberMe = rememberMe },
+                LoginWith2FaViewModel = model,
                 LoginWithFido2ViewModel = (await _fido2Service.HasCredentials(user.Id)) ? await BuildFido2ViewModel(rememberMe, user) : null,
                 LoginWithLNURLAuthViewModel = (await _lnurlAuthService.HasCredentials(user.Id)) ? await BuildLNURLAuthViewModel(rememberMe, user) : null,
             });
         }
+    }
 
-        [HttpPost("/login/2fa")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> LoginWith2fa(LoginWith2faViewModel model, bool rememberMe, string returnUrl = null)
+    [HttpGet("/login/recovery-code")]
+    [AllowAnonymous]
+    public async Task<IActionResult> LoginWithRecoveryCode(string returnUrl = null)
+    {
+        if (!CanLoginOrRegister())
         {
-            if (!CanLoginOrRegister())
-            {
-                return RedirectToAction("Login");
-            }
-
-            if (!ModelState.IsValid)
-            {
-                return View(model);
-            }
-
-            var user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
-            if (user == null)
-            {
-                throw new ApplicationException($"Unable to load user with ID '{_userManager.GetUserId(User)}'.");
-            }
-
-            var authenticatorCode = model.TwoFactorCode.Replace(" ", string.Empty, StringComparison.InvariantCulture).Replace("-", string.Empty, StringComparison.InvariantCulture);
-
-            var result = await _signInManager.TwoFactorAuthenticatorSignInAsync(authenticatorCode, rememberMe, model.RememberMachine);
-
-            if (result.Succeeded)
-            {
-                _logger.LogInformation("User with ID {UserId} logged in with 2fa.", user.Id);
-                return await RedirectToLocal(returnUrl);
-            }
-            else if (result.IsLockedOut)
-            {
-                _logger.LogWarning("User with ID {UserId} account locked out.", user.Id);
-                return RedirectToAction(nameof(Lockout));
-            }
-            else
-            {
-                _logger.LogWarning("Invalid authenticator code entered for user with ID {UserId}.", user.Id);
-                ModelState.AddModelError(string.Empty, "Invalid authenticator code.");
-                return View("SecondaryLogin", new SecondaryLoginViewModel()
-                {
-                    LoginWith2FaViewModel = model,
-                    LoginWithFido2ViewModel = (await _fido2Service.HasCredentials(user.Id)) ? await BuildFido2ViewModel(rememberMe, user) : null,
-                    LoginWithLNURLAuthViewModel = (await _lnurlAuthService.HasCredentials(user.Id)) ? await BuildLNURLAuthViewModel(rememberMe, user) : null,
-                });
-            }
+            return RedirectToAction("Login");
         }
 
-        [HttpGet("/login/recovery-code")]
-        [AllowAnonymous]
-        public async Task<IActionResult> LoginWithRecoveryCode(string returnUrl = null)
+        // Ensure the user has gone through the username & password screen first
+        ApplicationUser user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
+        if (user == null)
         {
-            if (!CanLoginOrRegister())
-            {
-                return RedirectToAction("Login");
-            }
-
-            // Ensure the user has gone through the username & password screen first
-            var user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
-            if (user == null)
-            {
-                throw new ApplicationException($"Unable to load two-factor authentication user.");
-            }
-
-            ViewData["ReturnUrl"] = returnUrl;
-
-            return View();
+            throw new ApplicationException($"Unable to load two-factor authentication user.");
         }
 
-        [HttpPost("/login/recovery-code")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> LoginWithRecoveryCode(LoginWithRecoveryCodeViewModel model, string returnUrl = null)
+        ViewData["ReturnUrl"] = returnUrl;
+
+        return View();
+    }
+
+    [HttpPost("/login/recovery-code")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> LoginWithRecoveryCode(LoginWithRecoveryCodeViewModel model, string returnUrl = null)
+    {
+        if (!CanLoginOrRegister())
         {
-            if (!CanLoginOrRegister())
-            {
-                return RedirectToAction("Login");
-            }
-
-            if (!ModelState.IsValid)
-            {
-                return View(model);
-            }
-
-            var user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
-            if (user == null)
-            {
-                throw new ApplicationException($"Unable to load two-factor authentication user.");
-            }
-
-            var recoveryCode = model.RecoveryCode.Replace(" ", string.Empty, StringComparison.InvariantCulture);
-
-            var result = await _signInManager.TwoFactorRecoveryCodeSignInAsync(recoveryCode);
-
-            if (result.Succeeded)
-            {
-                _logger.LogInformation("User with ID {UserId} logged in with a recovery code.", user.Id);
-                return await RedirectToLocal(returnUrl);
-            }
-            if (result.IsLockedOut)
-            {
-                _logger.LogWarning("User with ID {UserId} account locked out.", user.Id);
-                return RedirectToAction(nameof(Lockout));
-            }
-            else
-            {
-                _logger.LogWarning("Invalid recovery code entered for user with ID {UserId}", user.Id);
-                ModelState.AddModelError(string.Empty, "Invalid recovery code entered.");
-                return View();
-            }
+            return RedirectToAction("Login");
         }
 
-        [HttpGet("/login/lockout")]
-        [AllowAnonymous]
-        public IActionResult Lockout()
+        if (!ModelState.IsValid)
         {
-            return View();
-        }
-
-        [HttpGet("/register")]
-        [AllowAnonymous]
-        [RateLimitsFilter(ZoneLimits.Register, Scope = RateLimitsScope.RemoteAddress)]
-        public async Task<IActionResult> Register(string returnUrl = null, bool logon = true)
-        {
-            if (!CanLoginOrRegister())
-            {
-                SetInsecureFlags();
-            }
-            var policies = await _SettingsRepository.GetSettingAsync<PoliciesSettings>() ?? new PoliciesSettings();
-            if (policies.LockSubscription && !User.IsInRole(Roles.ServerAdmin))
-                return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
-            ViewData["ReturnUrl"] = returnUrl;
-            return View();
-        }
-
-        [HttpPost("/register")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Register(RegisterViewModel model, string returnUrl = null, bool logon = true)
-        {
-            if (!CanLoginOrRegister())
-            {
-                return RedirectToAction("Register");
-            }
-
-            ViewData["ReturnUrl"] = returnUrl;
-            ViewData["Logon"] = logon.ToString(CultureInfo.InvariantCulture).ToLowerInvariant();
-            var policies = await _SettingsRepository.GetSettingAsync<PoliciesSettings>() ?? new PoliciesSettings();
-            if (policies.LockSubscription && !User.IsInRole(Roles.ServerAdmin))
-                return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
-            if (ModelState.IsValid)
-            {
-                var user = new ApplicationUser
-                {
-                    UserName = model.Email,
-                    Email = model.Email,
-                    RequiresEmailConfirmation = policies.RequiresConfirmedEmail,
-                    Created = DateTimeOffset.UtcNow
-                };
-                var result = await _userManager.CreateAsync(user, model.Password);
-                if (result.Succeeded)
-                {
-                    var admin = await _userManager.GetUsersInRoleAsync(Roles.ServerAdmin);
-                    if (admin.Count == 0 || (model.IsAdmin && _Options.CheatMode))
-                    {
-                        await _RoleManager.CreateAsync(new IdentityRole(Roles.ServerAdmin));
-                        await _userManager.AddToRoleAsync(user, Roles.ServerAdmin);
-                        var settings = await _SettingsRepository.GetSettingAsync<ThemeSettings>();
-                        settings.FirstRun = false;
-                        await _SettingsRepository.UpdateSetting<ThemeSettings>(settings);
-
-                        await _SettingsRepository.FirstAdminRegistered(policies, _Options.UpdateUrl != null, _Options.DisableRegistration, Logs);
-                        RegisteredAdmin = true;
-                    }
-
-                    _eventAggregator.Publish(new UserRegisteredEvent()
-                    {
-                        RequestUri = Request.GetAbsoluteRootUri(),
-                        User = user,
-                        Admin = RegisteredAdmin
-                    });
-                    RegisteredUserId = user.Id;
-
-                    if (!policies.RequiresConfirmedEmail)
-                    {
-                        if (logon)
-                            await _signInManager.SignInAsync(user, isPersistent: false);
-                        return await RedirectToLocal(returnUrl);
-                    }
-                    else
-                    {
-                        TempData[WellKnownTempData.SuccessMessage] = "Account created, please confirm your email";
-                        return View();
-                    }
-                }
-                AddErrors(result);
-            }
-
-            // If we got this far, something failed, redisplay form
             return View(model);
         }
 
-        // Properties used by tests
-        public string RegisteredUserId { get; set; }
-        public bool RegisteredAdmin { get; set; }
-
-        [HttpGet("/logout")]
-        public async Task<IActionResult> Logout()
+        ApplicationUser user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
+        if (user == null)
         {
-            await _signInManager.SignOutAsync();
-            HttpContext.DeleteUserPrefsCookie();
-            _logger.LogInformation("User logged out.");
-            return RedirectToAction(nameof(UIAccountController.Login));
+            throw new ApplicationException($"Unable to load two-factor authentication user.");
         }
 
-        [HttpGet("/register/confirm-email")]
-        [AllowAnonymous]
-        public async Task<IActionResult> ConfirmEmail(string userId, string code)
+        var recoveryCode = model.RecoveryCode.Replace(" ", string.Empty, StringComparison.InvariantCulture);
+
+        Microsoft.AspNetCore.Identity.SignInResult result = await _signInManager.TwoFactorRecoveryCodeSignInAsync(recoveryCode);
+
+        if (result.Succeeded)
         {
-            if (userId == null || code == null)
-            {
-                return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
-            }
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                throw new ApplicationException($"Unable to load user with ID '{userId}'.");
-            }
-
-            var result = await _userManager.ConfirmEmailAsync(user, code);
-            if (!await _userManager.HasPasswordAsync(user))
-            {
-
-                TempData.SetStatusMessageModel(new StatusMessageModel()
-                {
-                    Severity = StatusMessageModel.StatusSeverity.Info,
-                    Message = "Your email has been confirmed but you still need to set your password."
-                });
-                return RedirectToAction("SetPassword", new { email = user.Email, code = await _userManager.GeneratePasswordResetTokenAsync(user) });
-            }
-
-            if (result.Succeeded)
-            {
-                TempData.SetStatusMessageModel(new StatusMessageModel()
-                {
-                    Severity = StatusMessageModel.StatusSeverity.Success,
-                    Message = "Your email has been confirmed."
-                });
-                return RedirectToAction("Login", new { email = user.Email });
-            }
-
-            return View("Error");
+            _logger.LogInformation("User with ID {UserId} logged in with a recovery code.", user.Id);
+            return await RedirectToLocal(returnUrl);
         }
-
-        [HttpGet("/login/forgot-password")]
-        [AllowAnonymous]
-        public IActionResult ForgotPassword()
+        if (result.IsLockedOut)
         {
+            _logger.LogWarning("User with ID {UserId} account locked out.", user.Id);
+            return RedirectToAction(nameof(Lockout));
+        }
+        else
+        {
+            _logger.LogWarning("Invalid recovery code entered for user with ID {UserId}", user.Id);
+            ModelState.AddModelError(string.Empty, "Invalid recovery code entered.");
             return View();
         }
+    }
 
-        [HttpPost("/login/forgot-password")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        [RateLimitsFilter(ZoneLimits.ForgotPassword, Scope = RateLimitsScope.RemoteAddress)]
-        public async Task<IActionResult> ForgotPassword(ForgotPasswordViewModel model)
+    [HttpGet("/login/lockout")]
+    [AllowAnonymous]
+    public IActionResult Lockout()
+    {
+        return View();
+    }
+
+    [HttpGet("/register")]
+    [AllowAnonymous]
+    [RateLimitsFilter(ZoneLimits.Register, Scope = RateLimitsScope.RemoteAddress)]
+    public async Task<IActionResult> Register(string returnUrl = null, bool logon = true)
+    {
+        if (!CanLoginOrRegister())
         {
-            if (ModelState.IsValid)
+            SetInsecureFlags();
+        }
+        PoliciesSettings policies = await _SettingsRepository.GetSettingAsync<PoliciesSettings>() ?? new PoliciesSettings();
+        if (policies.LockSubscription && !User.IsInRole(Roles.ServerAdmin))
+        {
+            return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
+        }
+
+        ViewData["ReturnUrl"] = returnUrl;
+        return View();
+    }
+
+    [HttpPost("/register")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Register(RegisterViewModel model, string returnUrl = null, bool logon = true)
+    {
+        if (!CanLoginOrRegister())
+        {
+            return RedirectToAction("Register");
+        }
+
+        ViewData["ReturnUrl"] = returnUrl;
+        ViewData["Logon"] = logon.ToString(CultureInfo.InvariantCulture).ToLowerInvariant();
+        PoliciesSettings policies = await _SettingsRepository.GetSettingAsync<PoliciesSettings>() ?? new PoliciesSettings();
+        if (policies.LockSubscription && !User.IsInRole(Roles.ServerAdmin))
+        {
+            return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
+        }
+
+        if (ModelState.IsValid)
+        {
+            var user = new ApplicationUser
             {
-                var user = await _userManager.FindByEmailAsync(model.Email);
-                if (user == null || (user.RequiresEmailConfirmation && !(await _userManager.IsEmailConfirmedAsync(user))))
+                UserName = model.Email,
+                Email = model.Email,
+                RequiresEmailConfirmation = policies.RequiresConfirmedEmail,
+                Created = DateTimeOffset.UtcNow
+            };
+            IdentityResult result = await _userManager.CreateAsync(user, model.Password);
+            if (result.Succeeded)
+            {
+                System.Collections.Generic.IList<ApplicationUser> admin = await _userManager.GetUsersInRoleAsync(Roles.ServerAdmin);
+                if (admin.Count == 0 || (model.IsAdmin && _Options.CheatMode))
                 {
-                    // Don't reveal that the user does not exist or is not confirmed
-                    return RedirectToAction(nameof(ForgotPasswordConfirmation));
+                    await _RoleManager.CreateAsync(new IdentityRole(Roles.ServerAdmin));
+                    await _userManager.AddToRoleAsync(user, Roles.ServerAdmin);
+                    ThemeSettings settings = await _SettingsRepository.GetSettingAsync<ThemeSettings>();
+                    settings.FirstRun = false;
+                    await _SettingsRepository.UpdateSetting<ThemeSettings>(settings);
+
+                    await _SettingsRepository.FirstAdminRegistered(policies, _Options.UpdateUrl != null, _Options.DisableRegistration, Logs);
+                    RegisteredAdmin = true;
                 }
-                _eventAggregator.Publish(new UserPasswordResetRequestedEvent()
+
+                _eventAggregator.Publish(new UserRegisteredEvent()
                 {
+                    RequestUri = Request.GetAbsoluteRootUri(),
                     User = user,
-                    RequestUri = Request.GetAbsoluteRootUri()
+                    Admin = RegisteredAdmin
                 });
-                return RedirectToAction(nameof(ForgotPasswordConfirmation));
-            }
+                RegisteredUserId = user.Id;
 
-            // If we got this far, something failed, redisplay form
-            return View(model);
-        }
-
-        [HttpGet("/login/forgot-password/confirm")]
-        [AllowAnonymous]
-        public IActionResult ForgotPasswordConfirmation()
-        {
-            return View();
-        }
-
-        [HttpGet("/login/set-password")]
-        [AllowAnonymous]
-        public async Task<IActionResult> SetPassword(string code = null, string userId = null, string email = null)
-        {
-            if (code == null)
-            {
-                throw new ApplicationException("A code must be supplied for password reset.");
-            }
-
-            if (!string.IsNullOrEmpty(userId))
-            {
-                var user = await _userManager.FindByIdAsync(userId);
-                email = user?.Email;
-            }
-
-            var model = new SetPasswordViewModel { Code = code, Email = email, EmailSetInternally = !string.IsNullOrEmpty(email) };
-            return View(model);
-        }
-
-        [HttpPost("/login/set-password")]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> SetPassword(SetPasswordViewModel model)
-        {
-            if (!ModelState.IsValid)
-            {
-                return View(model);
-            }
-            var user = await _userManager.FindByEmailAsync(model.Email);
-            if (user == null)
-            {
-                // Don't reveal that the user does not exist
-                return RedirectToAction(nameof(Login));
-            }
-
-            var result = await _userManager.ResetPasswordAsync(user, model.Code, model.Password);
-            if (result.Succeeded)
-            {
-                TempData.SetStatusMessageModel(new StatusMessageModel()
+                if (!policies.RequiresConfirmedEmail)
                 {
-                    Severity = StatusMessageModel.StatusSeverity.Success,
-                    Message = "Password successfully set."
-                });
-                return RedirectToAction(nameof(Login));
-            }
+                    if (logon)
+                    {
+                        await _signInManager.SignInAsync(user, isPersistent: false);
+                    }
 
-            AddErrors(result);
-            return View(model);
-        }
-
-        #region Helpers
-
-        private void AddErrors(IdentityResult result)
-        {
-            foreach (var error in result.Errors)
-            {
-                ModelState.AddModelError(string.Empty, error.Description);
-            }
-        }
-
-        private async Task<IActionResult> RedirectToLocal(string returnUrl = null)
-        {
-            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
-            {
-                return Redirect(returnUrl);
-            }
-            else
-            {
-                // After login, if there is an app on "/", we should redirect to BTCPay explicit home route, and not to the app.
-                var policies = await _SettingsRepository.GetPolicies();
-                if (policies?.RootAppId is not null && policies?.RootAppType is not null)
-                    return RedirectToAction(nameof(UIHomeController.Home), "UIHome");
-                if (policies?.DomainToAppMapping is { } mapping)
-                {
-                    var matchedDomainMapping = mapping.FirstOrDefault(item =>
-                    item.Domain.Equals(this.HttpContext.Request.Host.Host, StringComparison.InvariantCultureIgnoreCase));
-                    if (matchedDomainMapping is not null)
-                        return RedirectToAction(nameof(UIHomeController.Home), "UIHome");
+                    return await RedirectToLocal(returnUrl);
                 }
-                return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
+                else
+                {
+                    TempData[WellKnownTempData.SuccessMessage] = "Account created, please confirm your email";
+                    return View();
+                }
             }
+            AddErrors(result);
         }
 
+        // If we got this far, something failed, redisplay form
+        return View(model);
+    }
 
-        private bool CanLoginOrRegister()
+    // Properties used by tests
+    public string RegisteredUserId { get; set; }
+    public bool RegisteredAdmin { get; set; }
+
+    [HttpGet("/logout")]
+    public async Task<IActionResult> Logout()
+    {
+        await _signInManager.SignOutAsync();
+        HttpContext.DeleteUserPrefsCookie();
+        _logger.LogInformation("User logged out.");
+        return RedirectToAction(nameof(UIAccountController.Login));
+    }
+
+    [HttpGet("/register/confirm-email")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ConfirmEmail(string userId, string code)
+    {
+        if (userId == null || code == null)
         {
-            return _btcPayServerEnvironment.IsDeveloping || _btcPayServerEnvironment.IsSecure;
+            return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
+        }
+        ApplicationUser user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            throw new ApplicationException($"Unable to load user with ID '{userId}'.");
         }
 
-        private void SetInsecureFlags()
+        IdentityResult result = await _userManager.ConfirmEmailAsync(user, code);
+        if (!await _userManager.HasPasswordAsync(user))
+        {
+
+            TempData.SetStatusMessageModel(new StatusMessageModel()
+            {
+                Severity = StatusMessageModel.StatusSeverity.Info,
+                Message = "Your email has been confirmed but you still need to set your password."
+            });
+            return RedirectToAction("SetPassword", new { email = user.Email, code = await _userManager.GeneratePasswordResetTokenAsync(user) });
+        }
+
+        if (result.Succeeded)
         {
             TempData.SetStatusMessageModel(new StatusMessageModel()
             {
-                Severity = StatusMessageModel.StatusSeverity.Error,
-                Message = "You cannot login over an insecure connection. Please use HTTPS or Tor."
+                Severity = StatusMessageModel.StatusSeverity.Success,
+                Message = "Your email has been confirmed."
             });
-
-            ViewData["disabled"] = true;
+            return RedirectToAction("Login", new { email = user.Email });
         }
 
-        #endregion
+        return View("Error");
     }
+
+    [HttpGet("/login/forgot-password")]
+    [AllowAnonymous]
+    public IActionResult ForgotPassword()
+    {
+        return View();
+    }
+
+    [HttpPost("/login/forgot-password")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    [RateLimitsFilter(ZoneLimits.ForgotPassword, Scope = RateLimitsScope.RemoteAddress)]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordViewModel model)
+    {
+        if (ModelState.IsValid)
+        {
+            ApplicationUser user = await _userManager.FindByEmailAsync(model.Email);
+            if (user == null || (user.RequiresEmailConfirmation && !(await _userManager.IsEmailConfirmedAsync(user))))
+            {
+                // Don't reveal that the user does not exist or is not confirmed
+                return RedirectToAction(nameof(ForgotPasswordConfirmation));
+            }
+            _eventAggregator.Publish(new UserPasswordResetRequestedEvent()
+            {
+                User = user,
+                RequestUri = Request.GetAbsoluteRootUri()
+            });
+            return RedirectToAction(nameof(ForgotPasswordConfirmation));
+        }
+
+        // If we got this far, something failed, redisplay form
+        return View(model);
+    }
+
+    [HttpGet("/login/forgot-password/confirm")]
+    [AllowAnonymous]
+    public IActionResult ForgotPasswordConfirmation()
+    {
+        return View();
+    }
+
+    [HttpGet("/login/set-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SetPassword(string code = null, string userId = null, string email = null)
+    {
+        if (code == null)
+        {
+            throw new ApplicationException("A code must be supplied for password reset.");
+        }
+
+        if (!string.IsNullOrEmpty(userId))
+        {
+            ApplicationUser user = await _userManager.FindByIdAsync(userId);
+            email = user?.Email;
+        }
+
+        var model = new SetPasswordViewModel { Code = code, Email = email, EmailSetInternally = !string.IsNullOrEmpty(email) };
+        return View(model);
+    }
+
+    [HttpPost("/login/set-password")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetPassword(SetPasswordViewModel model)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View(model);
+        }
+        ApplicationUser user = await _userManager.FindByEmailAsync(model.Email);
+        if (user == null)
+        {
+            // Don't reveal that the user does not exist
+            return RedirectToAction(nameof(Login));
+        }
+
+        IdentityResult result = await _userManager.ResetPasswordAsync(user, model.Code, model.Password);
+        if (result.Succeeded)
+        {
+            TempData.SetStatusMessageModel(new StatusMessageModel()
+            {
+                Severity = StatusMessageModel.StatusSeverity.Success,
+                Message = "Password successfully set."
+            });
+            return RedirectToAction(nameof(Login));
+        }
+
+        AddErrors(result);
+        return View(model);
+    }
+
+    #region Helpers
+
+    private void AddErrors(IdentityResult result)
+    {
+        foreach (IdentityError error in result.Errors)
+        {
+            ModelState.AddModelError(string.Empty, error.Description);
+        }
+    }
+
+    private async Task<IActionResult> RedirectToLocal(string returnUrl = null)
+    {
+        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return Redirect(returnUrl);
+        }
+        else
+        {
+            // After login, if there is an app on "/", we should redirect to BTCPay explicit home route, and not to the app.
+            PoliciesSettings policies = await _SettingsRepository.GetPolicies();
+            if (policies?.RootAppId is not null && policies?.RootAppType is not null)
+            {
+                return RedirectToAction(nameof(UIHomeController.Home), "UIHome");
+            }
+
+            if (policies?.DomainToAppMapping is { } mapping)
+            {
+                PoliciesSettings.DomainToAppMappingItem matchedDomainMapping = mapping.FirstOrDefault(item =>
+                item.Domain.Equals(HttpContext.Request.Host.Host, StringComparison.InvariantCultureIgnoreCase));
+                if (matchedDomainMapping is not null)
+                {
+                    return RedirectToAction(nameof(UIHomeController.Home), "UIHome");
+                }
+            }
+            return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
+        }
+    }
+
+
+    private bool CanLoginOrRegister()
+    {
+        return _btcPayServerEnvironment.IsDeveloping || _btcPayServerEnvironment.IsSecure;
+    }
+
+    private void SetInsecureFlags()
+    {
+        TempData.SetStatusMessageModel(new StatusMessageModel()
+        {
+            Severity = StatusMessageModel.StatusSeverity.Error,
+            Message = "You cannot login over an insecure connection. Please use HTTPS or Tor."
+        });
+
+        ViewData["disabled"] = true;
+    }
+
+    #endregion
 }

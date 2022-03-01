@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Constants;
 using BTCPayServer.Client;
 using BTCPayServer.Data;
@@ -15,92 +11,98 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 
-namespace BTCPayServer.Controllers
+namespace BTCPayServer.Controllers;
+
+[Route("stores")]
+[AutoValidateAntiforgeryToken]
+public class UIUserStoresController : Controller
 {
-    [Route("stores")]
-    [AutoValidateAntiforgeryToken]
-    public class UIUserStoresController : Controller
+    private readonly StoreRepository _repo;
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly RateFetcher _rateFactory;
+    public string CreatedStoreId { get; set; }
+
+    public UIUserStoresController(
+        UserManager<ApplicationUser> userManager,
+        StoreRepository storeRepository,
+        RateFetcher rateFactory)
     {
-        private readonly StoreRepository _repo;
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly RateFetcher _rateFactory;
-        public string CreatedStoreId { get; set; }
+        _repo = storeRepository;
+        _userManager = userManager;
+        _rateFactory = rateFactory;
+    }
 
-        public UIUserStoresController(
-            UserManager<ApplicationUser> userManager,
-            StoreRepository storeRepository,
-            RateFetcher rateFactory)
+    [HttpGet("create")]
+    [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettingsUnscoped)]
+    public IActionResult CreateStore()
+    {
+        var vm = new CreateStoreViewModel
         {
-            _repo = storeRepository;
-            _userManager = userManager;
-            _rateFactory = rateFactory;
-        }
+            DefaultCurrency = StoreBlob.StandardDefaultCurrency,
+            Exchanges = GetExchangesSelectList(CoinGeckoRateProvider.CoinGeckoName)
+        };
 
-        [HttpGet("create")]
-        [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettingsUnscoped)]
-        public IActionResult CreateStore()
+        return View(vm);
+    }
+
+    [HttpPost("create")]
+    [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettingsUnscoped)]
+    public async Task<IActionResult> CreateStore(CreateStoreViewModel vm)
+    {
+        if (!ModelState.IsValid)
         {
-            var vm = new CreateStoreViewModel
-            {
-                DefaultCurrency = StoreBlob.StandardDefaultCurrency,
-                Exchanges = GetExchangesSelectList(CoinGeckoRateProvider.CoinGeckoName)
-            };
-
+            vm.Exchanges = GetExchangesSelectList(vm.PreferredExchange);
             return View(vm);
         }
 
-        [HttpPost("create")]
-        [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettingsUnscoped)]
-        public async Task<IActionResult> CreateStore(CreateStoreViewModel vm)
+        StoreData store = await _repo.CreateStore(GetUserId(), vm.Name, vm.DefaultCurrency, vm.PreferredExchange);
+        CreatedStoreId = store.Id;
+
+        TempData[WellKnownTempData.SuccessMessage] = "Store successfully created";
+        return RedirectToAction(nameof(UIStoresController.Dashboard), "UIStores", new
         {
-            if (!ModelState.IsValid)
-            {
-                vm.Exchanges = GetExchangesSelectList(vm.PreferredExchange);
-                return View(vm);
-            }
-            
-            var store = await _repo.CreateStore(GetUserId(), vm.Name, vm.DefaultCurrency, vm.PreferredExchange);
-            CreatedStoreId = store.Id;
-                
-            TempData[WellKnownTempData.SuccessMessage] = "Store successfully created";
-            return RedirectToAction(nameof(UIStoresController.Dashboard), "UIStores", new
-            {
-                storeId = store.Id
-            });
+            storeId = store.Id
+        });
+    }
+
+    [HttpGet("{storeId}/me/delete")]
+    [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettings)]
+    public IActionResult DeleteStore(string storeId)
+    {
+        StoreData store = HttpContext.GetStoreData();
+        if (store == null)
+        {
+            return NotFound();
         }
 
-        [HttpGet("{storeId}/me/delete")]
-        [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettings)]
-        public IActionResult DeleteStore(string storeId)
+        return View("Confirm", new ConfirmModel($"Delete store {store.StoreName}", "This store will still be accessible to users sharing it", "Delete"));
+    }
+
+    [HttpPost("{storeId}/me/delete")]
+    [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettings)]
+    public async Task<IActionResult> DeleteStorePost(string storeId)
+    {
+        var userId = GetUserId();
+        StoreData store = HttpContext.GetStoreData();
+        if (store == null)
         {
-            var store = HttpContext.GetStoreData();
-            if (store == null)
-                return NotFound();
-            return View("Confirm", new ConfirmModel($"Delete store {store.StoreName}", "This store will still be accessible to users sharing it", "Delete"));
+            return NotFound();
         }
 
-        [HttpPost("{storeId}/me/delete")]
-        [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettings)]
-        public async Task<IActionResult> DeleteStorePost(string storeId)
-        {
-            var userId = GetUserId();
-            var store = HttpContext.GetStoreData();
-            if (store == null)
-                return NotFound();
-            await _repo.RemoveStore(storeId, userId);
-            TempData[WellKnownTempData.SuccessMessage] = "Store removed successfully";
-            return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
-        }
+        await _repo.RemoveStore(storeId, userId);
+        TempData[WellKnownTempData.SuccessMessage] = "Store removed successfully";
+        return RedirectToAction(nameof(UIHomeController.Index), "UIHome");
+    }
 
-        private string GetUserId() => _userManager.GetUserId(User);
-        
-        private SelectList GetExchangesSelectList(string selected) {
-            var exchanges = _rateFactory.RateProviderFactory
-                .GetSupportedExchanges()
-                .Where(r => !string.IsNullOrWhiteSpace(r.Name))
-                .OrderBy(s => s.Id, StringComparer.OrdinalIgnoreCase);
-            var chosen = exchanges.FirstOrDefault(f => f.Id == selected) ?? exchanges.First();
-            return new SelectList(exchanges, nameof(chosen.Id), nameof(chosen.Name), chosen.Id);
-        }
+    private string GetUserId() => _userManager.GetUserId(User);
+
+    private SelectList GetExchangesSelectList(string selected)
+    {
+        IOrderedEnumerable<AvailableRateProvider> exchanges = _rateFactory.RateProviderFactory
+            .GetSupportedExchanges()
+            .Where(r => !string.IsNullOrWhiteSpace(r.Name))
+            .OrderBy(s => s.Id, StringComparer.OrdinalIgnoreCase);
+        AvailableRateProvider chosen = exchanges.FirstOrDefault(f => f.Id == selected) ?? exchanges.First();
+        return new SelectList(exchanges, nameof(chosen.Id), nameof(chosen.Name), chosen.Id);
     }
 }

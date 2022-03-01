@@ -1,33 +1,30 @@
-using System;
+namespace BTCPayServer.Services.Notifications;
 
-namespace BTCPayServer.Services.Notifications
+public class AdminScope : NotificationScope
 {
-    public class AdminScope : NotificationScope
+    public AdminScope()
     {
-        public AdminScope()
-        {
-        }
     }
-    public class StoreScope : NotificationScope
+}
+public class StoreScope : NotificationScope
+{
+    public StoreScope(string storeId)
     {
-        public StoreScope(string storeId)
-        {
-            ArgumentNullException.ThrowIfNull(storeId);
-            StoreId = storeId;
-        }
-        public string StoreId { get; }
+        ArgumentNullException.ThrowIfNull(storeId);
+        StoreId = storeId;
     }
-    public class UserScope : NotificationScope
+    public string StoreId { get; }
+}
+public class UserScope : NotificationScope
+{
+    public UserScope(string userId)
     {
-        public UserScope(string userId)
-        {
-            ArgumentNullException.ThrowIfNull(userId);
-            UserId = userId;
-        }
-        public string UserId { get; }
+        ArgumentNullException.ThrowIfNull(userId);
+        UserId = userId;
     }
+    public string UserId { get; }
+}
 
-    public interface NotificationScope
-    {
-    }
+public interface NotificationScope
+{
 }

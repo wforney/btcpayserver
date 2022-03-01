@@ -1,9 +1,8 @@
-namespace BTCPayServer.Models.ServerViewModels
+namespace BTCPayServer.Models.ServerViewModels;
+
+public class ChargeServiceViewModel
 {
-    public class ChargeServiceViewModel
-    {
-        public string Uri { get; set; }
-        public string APIToken { get; set; }
-        public string AuthenticatedUri { get; set; }
-    }
+    public string Uri { get; set; }
+    public string APIToken { get; set; }
+    public string AuthenticatedUri { get; set; }
 }

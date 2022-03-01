@@ -1,43 +1,42 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace BTCPayServer.Models.StoreViewModels
+namespace BTCPayServer.Models.StoreViewModels;
+
+public class PairingModel
 {
-    public class PairingModel
+    public class StoreViewModel
     {
-        public class StoreViewModel
+        public string Name
         {
-            public string Name
-            {
-                get; set;
-            }
-            public string Id
-            {
-                get; set;
-            }
+            get; set;
         }
         public string Id
         {
             get; set;
         }
-        public string Label
-        {
-            get; set;
-        }
-        public string SIN
-        {
-            get; set;
-        }
-        public StoreViewModel[] Stores
-        {
-            get;
-            set;
-        }
+    }
+    public string Id
+    {
+        get; set;
+    }
+    public string Label
+    {
+        get; set;
+    }
+    public string SIN
+    {
+        get; set;
+    }
+    public StoreViewModel[] Stores
+    {
+        get;
+        set;
+    }
 
-        [Display(Name = "Pair to")]
-        [Required]
-        public string StoreId
-        {
-            get; set;
-        }
+    [Display(Name = "Pair to")]
+    [Required]
+    public string StoreId
+    {
+        get; set;
     }
 }

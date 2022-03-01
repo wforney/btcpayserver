@@ -1,10 +1,6 @@
-using System.Threading;
-using System.Threading.Tasks;
+namespace BTCPayServer.Abstractions.Contracts;
 
-namespace BTCPayServer.Abstractions.Contracts
+public interface IStartupTask
 {
-    public interface IStartupTask
-    {
-        Task ExecuteAsync(CancellationToken cancellationToken = default);
-    }
+    Task ExecuteAsync(CancellationToken cancellationToken = default);
 }

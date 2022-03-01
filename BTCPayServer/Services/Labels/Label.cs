@@ -1,118 +1,129 @@
-using System;
 using BTCPayServer.Client.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace BTCPayServer.Services.Labels
+namespace BTCPayServer.Services.Labels;
+
+public abstract class Label : LabelData
 {
-
-    public abstract class Label : LabelData
+    private static void FixLegacy(JObject jObj, ReferenceLabel refLabel)
     {
-        static void FixLegacy(JObject jObj, ReferenceLabel refLabel)
+        if (refLabel.Reference is null && jObj.ContainsKey("id"))
         {
-            if (refLabel.Reference is null && jObj.ContainsKey("id"))
-                refLabel.Reference = jObj["id"].Value<string>();
-            FixLegacy(jObj, (Label)refLabel);
+            refLabel.Reference = jObj["id"].Value<string>();
         }
-        static void FixLegacy(JObject jObj, PayoutLabel payoutLabel)
-        {
-            if (payoutLabel.PayoutId is null)
-                payoutLabel.PayoutId = jObj["id"].Value<string>();
-            FixLegacy(jObj, (Label)payoutLabel);
-        }
-        static void FixLegacy(JObject jObj, Label label)
-        {
-            if (label.Type is null)
-                label.Type = jObj["value"].Value<string>();
-            if (label.Text is null)
-                label.Text = label.Type;
-        }
-        static void FixLegacy(JObject jObj, RawLabel rawLabel)
-        {
-            rawLabel.Type = "raw";
-            FixLegacy(jObj, (Label)rawLabel);
-        }
-        public static Label Parse(string str)
-        {
-            ArgumentNullException.ThrowIfNull(str);
-            if (str.StartsWith("{", StringComparison.InvariantCultureIgnoreCase))
-            {
-                var jObj = JObject.Parse(str);
-                string type = null;
-                // Legacy label
-                if (!jObj.ContainsKey("type"))
-                {
-                    type = jObj["value"].Value<string>();
-                }
-                else
-                {
-                    type = jObj["type"].Value<string>();
-                }
 
-                switch (type)
-                {
-                    case "raw":
-                        var rawLabel = JsonConvert.DeserializeObject<RawLabel>(str);
-                        FixLegacy(jObj, rawLabel);
-                        return rawLabel;
-                    case "invoice":
-                    case "payment-request":
-                    case "app":
-                    case "pj-exposed":
-                        var refLabel = JsonConvert.DeserializeObject<ReferenceLabel>(str);
-                        FixLegacy(jObj, refLabel);
-                        return refLabel;
-                    case "payout":
-                        var payoutLabel = JsonConvert.DeserializeObject<PayoutLabel>(str);
-                        FixLegacy(jObj, payoutLabel);
-                        return payoutLabel;
-                    default:
-                        // Legacy
-                        return new RawLabel(jObj["value"].Value<string>());
-                }
+        FixLegacy(jObj, (Label)refLabel);
+    }
+
+    private static void FixLegacy(JObject jObj, PayoutLabel payoutLabel)
+    {
+        if (payoutLabel.PayoutId is null)
+        {
+            payoutLabel.PayoutId = jObj["id"].Value<string>();
+        }
+
+        FixLegacy(jObj, (Label)payoutLabel);
+    }
+
+    private static void FixLegacy(JObject jObj, Label label)
+    {
+        if (label.Type is null)
+        {
+            label.Type = jObj["value"].Value<string>();
+        }
+
+        if (label.Text is null)
+        {
+            label.Text = label.Type;
+        }
+    }
+
+    private static void FixLegacy(JObject jObj, RawLabel rawLabel)
+    {
+        rawLabel.Type = "raw";
+        FixLegacy(jObj, (Label)rawLabel);
+    }
+    public static Label Parse(string str)
+    {
+        ArgumentNullException.ThrowIfNull(str);
+        if (str.StartsWith("{", StringComparison.InvariantCultureIgnoreCase))
+        {
+            var jObj = JObject.Parse(str);
+            string type = null;
+            // Legacy label
+            if (!jObj.ContainsKey("type"))
+            {
+                type = jObj["value"].Value<string>();
             }
             else
             {
-                return new RawLabel(str);
+                type = jObj["type"].Value<string>();
+            }
+
+            switch (type)
+            {
+                case "raw":
+                    RawLabel rawLabel = JsonConvert.DeserializeObject<RawLabel>(str);
+                    FixLegacy(jObj, rawLabel);
+                    return rawLabel;
+                case "invoice":
+                case "payment-request":
+                case "app":
+                case "pj-exposed":
+                    ReferenceLabel refLabel = JsonConvert.DeserializeObject<ReferenceLabel>(str);
+                    FixLegacy(jObj, refLabel);
+                    return refLabel;
+                case "payout":
+                    PayoutLabel payoutLabel = JsonConvert.DeserializeObject<PayoutLabel>(str);
+                    FixLegacy(jObj, payoutLabel);
+                    return payoutLabel;
+                default:
+                    // Legacy
+                    return new RawLabel(jObj["value"].Value<string>());
             }
         }
+        else
+        {
+            return new RawLabel(str);
+        }
     }
+}
 
-    public class RawLabel : Label
+public class RawLabel : Label
+{
+    public RawLabel()
     {
-        public RawLabel()
-        {
-            Type = "raw";
-        }
-        public RawLabel(string text) : this()
-        {
-            Text = text;
-        }
+        Type = "raw";
     }
-    public class ReferenceLabel : Label
+    public RawLabel(string text) : this()
     {
-        public ReferenceLabel()
-        {
+        Text = text;
+    }
+}
+public class ReferenceLabel : Label
+{
+    public ReferenceLabel()
+    {
 
-        }
-        public ReferenceLabel(string type, string reference)
-        {
-            Text = type;
-            Reference = reference;
-            Type = type;
-        }
-        [JsonProperty("ref")]
-        public string Reference { get; set; }
     }
-    public class PayoutLabel : Label
+    public ReferenceLabel(string type, string reference)
     {
-        public PayoutLabel()
-        {
-            Type = "payout";
-            Text = "payout";
-        }
-        public string PayoutId { get; set; }
-        public string WalletId { get; set; }
-        public string PullPaymentId { get; set; }
+        Text = type;
+        Reference = reference;
+        Type = type;
     }
+    [JsonProperty("ref")]
+    public string Reference { get; set; }
+}
+public class PayoutLabel : Label
+{
+    public PayoutLabel()
+    {
+        Type = "payout";
+        Text = "payout";
+    }
+    public string PayoutId { get; set; }
+    public string WalletId { get; set; }
+    public string PullPaymentId { get; set; }
 }

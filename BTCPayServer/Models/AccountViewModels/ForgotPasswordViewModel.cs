@@ -1,12 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace BTCPayServer.Models.AccountViewModels
+namespace BTCPayServer.Models.AccountViewModels;
+
+public class ForgotPasswordViewModel
 {
-    public class ForgotPasswordViewModel
-    {
-        [Required]
-        [EmailAddress]
-        [Display(Name = "Email address")]
-        public string Email { get; set; }
-    }
+    [Required]
+    [EmailAddress]
+    [Display(Name = "Email address")]
+    public string Email { get; set; }
 }

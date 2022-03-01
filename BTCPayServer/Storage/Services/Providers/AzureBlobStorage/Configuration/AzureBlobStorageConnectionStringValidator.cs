@@ -1,22 +1,21 @@
+namespace BTCPayServer.Storage.Services.Providers.AzureBlobStorage.Configuration;
+
 using System;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.WindowsAzure.Storage;
 
-namespace BTCPayServer.Storage.Services.Providers.AzureBlobStorage.Configuration
+public class AzureBlobStorageConnectionStringValidator : ValidationAttribute
 {
-    public class AzureBlobStorageConnectionStringValidator : ValidationAttribute
+    protected override ValidationResult IsValid(object value, ValidationContext validationContext)
     {
-        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        try
         {
-            try
-            {
-                CloudStorageAccount.Parse(value as string);
-                return ValidationResult.Success;
-            }
-            catch (Exception e)
-            {
-                return new ValidationResult(e.Message);
-            }
+            _ = CloudStorageAccount.Parse(value as string);
+            return ValidationResult.Success;
+        }
+        catch (Exception e)
+        {
+            return new ValidationResult(e.Message);
         }
     }
 }

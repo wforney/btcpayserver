@@ -1,41 +1,39 @@
-using System;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
 
-namespace BTCPayServer.Tests.Mocks
+namespace BTCPayServer.Tests.Mocks;
+
+public class UrlHelperMock : IUrlHelper
 {
-    public class UrlHelperMock : IUrlHelper
+    private readonly Uri _BaseUrl;
+    public UrlHelperMock(Uri baseUrl)
     {
-        readonly Uri _BaseUrl;
-        public UrlHelperMock(Uri baseUrl)
-        {
-            _BaseUrl = baseUrl;
-        }
-        public ActionContext ActionContext => throw new NotImplementedException();
+        _BaseUrl = baseUrl;
+    }
+    public ActionContext ActionContext => throw new NotImplementedException();
 
-        public string Action(UrlActionContext actionContext)
-        {
-            return $"{_BaseUrl}mock";
-        }
+    public string Action(UrlActionContext actionContext)
+    {
+        return $"{_BaseUrl}mock";
+    }
 
-        public string Content(string contentPath)
-        {
-            return $"{_BaseUrl}{contentPath}";
-        }
+    public string Content(string contentPath)
+    {
+        return $"{_BaseUrl}{contentPath}";
+    }
 
-        public bool IsLocalUrl(string url)
-        {
-            return false;
-        }
+    public bool IsLocalUrl(string url)
+    {
+        return false;
+    }
 
-        public string Link(string routeName, object values)
-        {
-            return _BaseUrl.AbsoluteUri;
-        }
+    public string Link(string routeName, object values)
+    {
+        return _BaseUrl.AbsoluteUri;
+    }
 
-        public string RouteUrl(UrlRouteContext routeContext)
-        {
-            return _BaseUrl.AbsoluteUri;
-        }
+    public string RouteUrl(UrlRouteContext routeContext)
+    {
+        return _BaseUrl.AbsoluteUri;
     }
 }

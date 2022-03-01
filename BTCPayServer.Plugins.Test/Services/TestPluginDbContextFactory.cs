@@ -4,34 +4,32 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Options;
 
-namespace BTCPayServer.Plugins.Test
+namespace BTCPayServer.Plugins.Test;
+
+public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<TestPluginDbContext>
 {
-
-    public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<TestPluginDbContext>
+    public TestPluginDbContext CreateDbContext(string[] args)
     {
-        public TestPluginDbContext CreateDbContext(string[] args)
-        {
 
-            var builder = new DbContextOptionsBuilder<TestPluginDbContext>();
+        var builder = new DbContextOptionsBuilder<TestPluginDbContext>();
 
-            builder.UseSqlite("Data Source=temp.db");
+        builder.UseSqlite("Data Source=temp.db");
 
-            return new TestPluginDbContext(builder.Options, true);
-        }
+        return new TestPluginDbContext(builder.Options, true);
+    }
+}
+
+public class TestPluginDbContextFactory : BaseDbContextFactory<TestPluginDbContext>
+{
+    public TestPluginDbContextFactory(IOptions<DatabaseOptions> options) : base(options, "BTCPayServer.Plugins.Test")
+    {
     }
 
-    public class TestPluginDbContextFactory : BaseDbContextFactory<TestPluginDbContext>
+    public override TestPluginDbContext CreateContext()
     {
-        public TestPluginDbContextFactory(IOptions<DatabaseOptions> options) : base(options, "BTCPayServer.Plugins.Test")
-        {
-        }
+        var builder = new DbContextOptionsBuilder<TestPluginDbContext>();
+        ConfigureBuilder(builder);
+        return new TestPluginDbContext(builder.Options);
 
-        public override TestPluginDbContext CreateContext()
-        {
-            var builder = new DbContextOptionsBuilder<TestPluginDbContext>();
-            ConfigureBuilder(builder);
-            return new TestPluginDbContext(builder.Options);
-
-        }
     }
 }

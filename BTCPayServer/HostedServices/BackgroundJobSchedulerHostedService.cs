@@ -1,148 +1,147 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
 using System.Threading.Channels;
-using System.Threading.Tasks;
 using BTCPayServer.Logging;
 using BTCPayServer.Services;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using NBitcoin;
 
-namespace BTCPayServer.HostedServices
+namespace BTCPayServer.HostedServices;
+
+public class BackgroundJobSchedulerHostedService : IHostedService
 {
-    public class BackgroundJobSchedulerHostedService : IHostedService
+    public BackgroundJobSchedulerHostedService(IBackgroundJobClient backgroundJobClient, Logs logs)
     {
-        public BackgroundJobSchedulerHostedService(IBackgroundJobClient backgroundJobClient, Logs logs)
+        BackgroundJobClient = (BackgroundJobClient)backgroundJobClient;
+        Logs = logs;
+    }
+
+    public BackgroundJobClient BackgroundJobClient { get; }
+    public Logs Logs { get; }
+
+    private Task _Loop;
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        _Stop = new CancellationTokenSource();
+        _Loop = BackgroundJobClient.ProcessJobs(_Stop.Token);
+        return Task.CompletedTask;
+    }
+
+    private CancellationTokenSource _Stop;
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_Stop == null)
         {
-            BackgroundJobClient = (BackgroundJobClient)backgroundJobClient;
-            Logs = logs;
+            return;
         }
 
-        public BackgroundJobClient BackgroundJobClient { get; }
-        public Logs Logs { get; }
-
-        Task _Loop;
-
-        public Task StartAsync(CancellationToken cancellationToken)
+        _Stop.Cancel();
+        try
         {
-            _Stop = new CancellationTokenSource();
-            _Loop = BackgroundJobClient.ProcessJobs(_Stop.Token);
-            return Task.CompletedTask;
+            await _Loop;
+        }
+        catch (OperationCanceledException)
+        {
+
+        }
+        try
+        {
+            await BackgroundJobClient.WaitAllRunning(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+
+        }
+    }
+}
+
+public class BackgroundJobClient : IBackgroundJobClient
+{
+    private class BackgroundJob
+    {
+        public Func<CancellationToken, Task> Action;
+        public TimeSpan Delay;
+        public IDelay DelayImplementation;
+        public BackgroundJob(Func<CancellationToken, Task> action, TimeSpan delay, IDelay delayImplementation)
+        {
+            Action = action;
+            Delay = delay;
+            DelayImplementation = delayImplementation;
         }
 
-        CancellationTokenSource _Stop;
-
-        public async Task StopAsync(CancellationToken cancellationToken)
+        public async Task Run(CancellationToken cancellationToken)
         {
-            if (_Stop == null)
-                return;
-            _Stop.Cancel();
-            try
-            {
-                await _Loop;
-            }
-            catch (OperationCanceledException)
-            {
-
-            }
-            try
-            {
-                await BackgroundJobClient.WaitAllRunning(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-
-            }
+            await DelayImplementation.Wait(Delay, cancellationToken);
+            await Action(cancellationToken);
         }
     }
 
-    public class BackgroundJobClient : IBackgroundJobClient
+    public BackgroundJobClient(Logs logs)
     {
-        class BackgroundJob
+        Logs = logs;
+    }
+
+    private readonly Logs Logs;
+
+    public IDelay Delay { get; set; } = TaskDelay.Instance;
+    public int GetExecutingCount()
+    {
+        lock (_Processing)
         {
-            public Func<CancellationToken, Task> Action;
-            public TimeSpan Delay;
-            public IDelay DelayImplementation;
-            public BackgroundJob(Func<CancellationToken, Task> action, TimeSpan delay, IDelay delayImplementation)
+            return _Processing.Count;
+        }
+    }
+
+    private readonly Channel<BackgroundJob> _Jobs = Channel.CreateUnbounded<BackgroundJob>();
+    private readonly HashSet<Task> _Processing = new HashSet<Task>();
+    public void Schedule(Func<CancellationToken, Task> act, TimeSpan scheduledIn)
+    {
+        _Jobs.Writer.TryWrite(new BackgroundJob(act, scheduledIn, Delay));
+    }
+
+    public async Task WaitAllRunning(CancellationToken cancellationToken)
+    {
+        Task[] processing = null;
+        lock (_Processing)
+        {
+            if (_Processing.Count == 0)
             {
-                this.Action = action;
-                this.Delay = delay;
-                this.DelayImplementation = delayImplementation;
+                return;
             }
 
-            public async Task Run(CancellationToken cancellationToken)
-            {
-                await DelayImplementation.Wait(Delay, cancellationToken);
-                await Action(cancellationToken);
-            }
+            processing = _Processing.ToArray();
         }
 
-        public BackgroundJobClient(Logs logs)
+        try
         {
-            Logs = logs;
+            await Task.WhenAll(processing).WithCancellation(cancellationToken);
         }
-        Logs Logs;
-
-        public IDelay Delay { get; set; } = TaskDelay.Instance;
-        public int GetExecutingCount()
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
-            lock (_Processing)
-            {
-                return _Processing.Count;
-            }
         }
+    }
 
-        private readonly Channel<BackgroundJob> _Jobs = Channel.CreateUnbounded<BackgroundJob>();
-        readonly HashSet<Task> _Processing = new HashSet<Task>();
-        public void Schedule(Func<CancellationToken, Task> act, TimeSpan scheduledIn)
+    public async Task ProcessJobs(CancellationToken cancellationToken)
+    {
+        while (await _Jobs.Reader.WaitToReadAsync(cancellationToken))
         {
-            _Jobs.Writer.TryWrite(new BackgroundJob(act, scheduledIn, Delay));
-        }
-
-        public async Task WaitAllRunning(CancellationToken cancellationToken)
-        {
-            Task[] processing = null;
-            lock (_Processing)
+            if (_Jobs.Reader.TryRead(out BackgroundJob job))
             {
-                if (_Processing.Count == 0)
-                    return;
-                processing = _Processing.ToArray();
-            }
-
-            try
-            {
-                await Task.WhenAll(processing).WithCancellation(cancellationToken);
-            }
-            catch (Exception) when (!cancellationToken.IsCancellationRequested)
-            {
-            }
-        }
-
-        public async Task ProcessJobs(CancellationToken cancellationToken)
-        {
-            while (await _Jobs.Reader.WaitToReadAsync(cancellationToken))
-            {
-                if (_Jobs.Reader.TryRead(out var job))
+                Task processing = job.Run(cancellationToken);
+                lock (_Processing)
                 {
-                    var processing = job.Run(cancellationToken);
+                    _Processing.Add(processing);
+                }
+                _ = processing.ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        Logs.PayServer.LogWarning(t.Exception, "Unhandled exception while job running");
+                    }
                     lock (_Processing)
                     {
-                        _Processing.Add(processing);
+                        _Processing.Remove(processing);
                     }
-                    _ = processing.ContinueWith(t =>
-                    {
-                        if (t.IsFaulted)
-                        {
-                            Logs.PayServer.LogWarning(t.Exception, "Unhandled exception while job running");
-                        }
-                        lock (_Processing)
-                        {
-                            _Processing.Remove(processing);
-                        }
-                    }, default, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-                }
+                }, default, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             }
         }
     }

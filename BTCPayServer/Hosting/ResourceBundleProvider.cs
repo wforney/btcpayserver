@@ -1,47 +1,44 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Text;
 using BundlerMinifier.TagHelpers;
-using Microsoft.AspNetCore.Hosting;
 using Newtonsoft.Json.Linq;
 
-namespace BTCPayServer.Hosting
+namespace BTCPayServer.Hosting;
+
+public class ResourceBundleProvider : IBundleProvider
 {
-    public class ResourceBundleProvider : IBundleProvider
+    private readonly BundleProvider _InnerProvider;
+    private readonly Lazy<Dictionary<string, Bundle>> _BundlesByName;
+    public ResourceBundleProvider(IWebHostEnvironment hosting, BundleOptions options)
     {
-        readonly BundleProvider _InnerProvider;
-        readonly Lazy<Dictionary<string, Bundle>> _BundlesByName;
-        public ResourceBundleProvider(IWebHostEnvironment hosting, BundleOptions options)
+        if (options.UseBundles)
         {
-            if (options.UseBundles)
+            _BundlesByName = new Lazy<Dictionary<string, Bundle>>(() =>
             {
-                _BundlesByName = new Lazy<Dictionary<string, Bundle>>(() =>
-                {
-                    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("BTCPayServer.bundleconfig.json");
-                    using var reader = new StreamReader(stream, Encoding.UTF8);
-                    var content = reader.ReadToEnd();
-                    return JArray.Parse(content).OfType<JObject>()
-                           .Select(jobj => new Bundle()
-                           {
-                               Name = jobj.Property("name", StringComparison.OrdinalIgnoreCase)?.Value.Value<string>() ?? jobj.Property("outputFileName", StringComparison.OrdinalIgnoreCase).Value.Value<string>(),
-                               OutputFileUrl = Path.Combine(hosting.ContentRootPath, jobj.Property("outputFileName", StringComparison.OrdinalIgnoreCase).Value.Value<string>())
-                           }).ToDictionary(o => o.Name, o => o);
-                }, true);
-            }
-            else
-            {
-                _InnerProvider = new BundleProvider(hosting);
-            }
+                using Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("BTCPayServer.bundleconfig.json");
+                using var reader = new StreamReader(stream, Encoding.UTF8);
+                var content = reader.ReadToEnd();
+                return JArray.Parse(content).OfType<JObject>()
+                       .Select(jobj => new Bundle()
+                       {
+                           Name = jobj.Property("name", StringComparison.OrdinalIgnoreCase)?.Value.Value<string>() ?? jobj.Property("outputFileName", StringComparison.OrdinalIgnoreCase).Value.Value<string>(),
+                           OutputFileUrl = Path.Combine(hosting.ContentRootPath, jobj.Property("outputFileName", StringComparison.OrdinalIgnoreCase).Value.Value<string>())
+                       }).ToDictionary(o => o.Name, o => o);
+            }, true);
         }
-        public Bundle GetBundle(string name)
+        else
         {
-            if (_InnerProvider != null)
-                return _InnerProvider.GetBundle(name);
-            _BundlesByName.Value.TryGetValue(name, out var bundle);
-            return bundle;
+            _InnerProvider = new BundleProvider(hosting);
         }
+    }
+    public Bundle GetBundle(string name)
+    {
+        if (_InnerProvider != null)
+        {
+            return _InnerProvider.GetBundle(name);
+        }
+
+        _BundlesByName.Value.TryGetValue(name, out Bundle bundle);
+        return bundle;
     }
 }

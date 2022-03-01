@@ -1,37 +1,41 @@
-using System;
 using BTCPayServer.Client.Models;
 using NBXplorer;
 using Newtonsoft.Json.Linq;
 
-namespace BTCPayServer.Data
+namespace BTCPayServer.Data;
+
+public static class PaymentRequestDataExtensions
 {
-    public static class PaymentRequestDataExtensions
+    public static PaymentRequestBaseData GetBlob(this PaymentRequestData paymentRequestData)
     {
-        public static PaymentRequestBaseData GetBlob(this PaymentRequestData paymentRequestData)
+        PaymentRequestBaseData result = paymentRequestData.Blob == null
+            ? new PaymentRequestBaseData()
+            : ParseBlob(paymentRequestData.Blob);
+        return result;
+    }
+
+    private static PaymentRequestBaseData ParseBlob(byte[] blob)
+    {
+        var jobj = JObject.Parse(ZipUtils.Unzip(blob));
+        // Fixup some legacy payment requests
+        if (jobj["expiryDate"].Type == JTokenType.Date)
         {
-            var result = paymentRequestData.Blob == null
-                ? new PaymentRequestBaseData()
-                : ParseBlob(paymentRequestData.Blob);
-            return result;
+            jobj["expiryDate"] = new JValue(NBitcoin.Utils.DateTimeToUnixTime(jobj["expiryDate"].Value<DateTime>()));
         }
 
-        private static PaymentRequestBaseData ParseBlob(byte[] blob)
+        return jobj.ToObject<PaymentRequestBaseData>();
+    }
+
+    public static bool SetBlob(this PaymentRequestData paymentRequestData, PaymentRequestBaseData blob)
+    {
+        var original = new Serializer(null).ToString(paymentRequestData.GetBlob());
+        var newBlob = new Serializer(null).ToString(blob);
+        if (original == newBlob)
         {
-            var jobj = JObject.Parse(ZipUtils.Unzip(blob));
-            // Fixup some legacy payment requests
-            if (jobj["expiryDate"].Type == JTokenType.Date)
-                jobj["expiryDate"] = new JValue(NBitcoin.Utils.DateTimeToUnixTime(jobj["expiryDate"].Value<DateTime>()));
-            return jobj.ToObject<PaymentRequestBaseData>();
+            return false;
         }
 
-        public static bool SetBlob(this PaymentRequestData paymentRequestData, PaymentRequestBaseData blob)
-        {
-            var original = new Serializer(null).ToString(paymentRequestData.GetBlob());
-            var newBlob = new Serializer(null).ToString(blob);
-            if (original == newBlob)
-                return false;
-            paymentRequestData.Blob = ZipUtils.Zip(newBlob);
-            return true;
-        }
+        paymentRequestData.Blob = ZipUtils.Zip(newBlob);
+        return true;
     }
 }

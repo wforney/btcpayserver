@@ -1,13 +1,10 @@
-using System;
+namespace BTCPayServer.Events;
 
-namespace BTCPayServer.Events
+public class WalletChangedEvent
 {
-    public class WalletChangedEvent
+    public WalletId WalletId { get; set; }
+    public override string ToString()
     {
-        public WalletId WalletId { get; set; }
-        public override string ToString()
-        {
-            return $"Wallet {WalletId} changed";
-        }
+        return $"Wallet {WalletId} changed";
     }
 }

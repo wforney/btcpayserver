@@ -1,110 +1,110 @@
-using System;
-using System.Linq;
+namespace BTCPayServer.Payments;
 
-namespace BTCPayServer.Payments
+public interface IPaymentFilter
 {
-    public interface IPaymentFilter
+    bool Match(PaymentMethodId paymentMethodId);
+}
+
+public class PaymentFilter
+{
+    private class OrPaymentFilter : IPaymentFilter
     {
-        bool Match(PaymentMethodId paymentMethodId);
+        private readonly IPaymentFilter _a;
+        private readonly IPaymentFilter _b;
+
+        public OrPaymentFilter(IPaymentFilter a, IPaymentFilter b)
+        {
+            _a = a;
+            _b = b;
+        }
+        public bool Match(PaymentMethodId paymentMethodId)
+        {
+            return _a.Match(paymentMethodId) || _b.Match(paymentMethodId);
+        }
     }
 
-    public class PaymentFilter
+    private class NeverPaymentFilter : IPaymentFilter
     {
-        class OrPaymentFilter : IPaymentFilter
-        {
-            private readonly IPaymentFilter _a;
-            private readonly IPaymentFilter _b;
 
-            public OrPaymentFilter(IPaymentFilter a, IPaymentFilter b)
+        private static readonly NeverPaymentFilter _Instance = new NeverPaymentFilter();
+        public static NeverPaymentFilter Instance
+        {
+            get
             {
-                _a = a;
-                _b = b;
-            }
-            public bool Match(PaymentMethodId paymentMethodId)
-            {
-                return _a.Match(paymentMethodId) || _b.Match(paymentMethodId);
+                return _Instance;
             }
         }
-        class NeverPaymentFilter : IPaymentFilter
+        public bool Match(PaymentMethodId paymentMethodId)
         {
+            return false;
+        }
+    }
 
-            private static readonly NeverPaymentFilter _Instance = new NeverPaymentFilter();
-            public static NeverPaymentFilter Instance
-            {
-                get
-                {
-                    return _Instance;
-                }
-            }
-            public bool Match(PaymentMethodId paymentMethodId)
-            {
-                return false;
-            }
-        }
-        class CompositePaymentFilter : IPaymentFilter
-        {
-            private readonly IPaymentFilter[] _filters;
+    private class CompositePaymentFilter : IPaymentFilter
+    {
+        private readonly IPaymentFilter[] _filters;
 
-            public CompositePaymentFilter(IPaymentFilter[] filters)
-            {
-                _filters = filters;
-            }
-            public bool Match(PaymentMethodId paymentMethodId)
-            {
-                return _filters.Any(f => f.Match(paymentMethodId));
-            }
-        }
-        class PaymentIdFilter : IPaymentFilter
+        public CompositePaymentFilter(IPaymentFilter[] filters)
         {
-            private readonly PaymentMethodId _paymentMethodId;
+            _filters = filters;
+        }
+        public bool Match(PaymentMethodId paymentMethodId)
+        {
+            return _filters.Any(f => f.Match(paymentMethodId));
+        }
+    }
 
-            public PaymentIdFilter(PaymentMethodId paymentMethodId)
-            {
-                _paymentMethodId = paymentMethodId;
-            }
-            public bool Match(PaymentMethodId paymentMethodId)
-            {
-                return paymentMethodId == _paymentMethodId;
-            }
-        }
-        class PredicateFilter : IPaymentFilter
-        {
-            private readonly Func<PaymentMethodId, bool> predicate;
+    private class PaymentIdFilter : IPaymentFilter
+    {
+        private readonly PaymentMethodId _paymentMethodId;
 
-            public PredicateFilter(Func<PaymentMethodId, bool> predicate)
-            {
-                this.predicate = predicate;
-            }
+        public PaymentIdFilter(PaymentMethodId paymentMethodId)
+        {
+            _paymentMethodId = paymentMethodId;
+        }
+        public bool Match(PaymentMethodId paymentMethodId)
+        {
+            return paymentMethodId == _paymentMethodId;
+        }
+    }
 
-            public bool Match(PaymentMethodId paymentMethodId)
-            {
-                return this.predicate(paymentMethodId);
-            }
-        }
-        public static IPaymentFilter Where(Func<PaymentMethodId, bool> predicate)
+    private class PredicateFilter : IPaymentFilter
+    {
+        private readonly Func<PaymentMethodId, bool> predicate;
+
+        public PredicateFilter(Func<PaymentMethodId, bool> predicate)
         {
-            ArgumentNullException.ThrowIfNull(predicate);
-            return new PredicateFilter(predicate);
+            this.predicate = predicate;
         }
-        public static IPaymentFilter Or(IPaymentFilter a, IPaymentFilter b)
+
+        public bool Match(PaymentMethodId paymentMethodId)
         {
-            ArgumentNullException.ThrowIfNull(a);
-            ArgumentNullException.ThrowIfNull(b);
-            return new OrPaymentFilter(a, b);
+            return predicate(paymentMethodId);
         }
-        public static IPaymentFilter Never()
-        {
-            return NeverPaymentFilter.Instance;
-        }
-        public static IPaymentFilter Any(IPaymentFilter[] filters)
-        {
-            ArgumentNullException.ThrowIfNull(filters);
-            return new CompositePaymentFilter(filters);
-        }
-        public static IPaymentFilter WhereIs(PaymentMethodId paymentMethodId)
-        {
-            ArgumentNullException.ThrowIfNull(paymentMethodId);
-            return new PaymentIdFilter(paymentMethodId);
-        }
+    }
+    public static IPaymentFilter Where(Func<PaymentMethodId, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        return new PredicateFilter(predicate);
+    }
+    public static IPaymentFilter Or(IPaymentFilter a, IPaymentFilter b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+        return new OrPaymentFilter(a, b);
+    }
+    public static IPaymentFilter Never()
+    {
+        return NeverPaymentFilter.Instance;
+    }
+    public static IPaymentFilter Any(IPaymentFilter[] filters)
+    {
+        ArgumentNullException.ThrowIfNull(filters);
+        return new CompositePaymentFilter(filters);
+    }
+    public static IPaymentFilter WhereIs(PaymentMethodId paymentMethodId)
+    {
+        ArgumentNullException.ThrowIfNull(paymentMethodId);
+        return new PaymentIdFilter(paymentMethodId);
     }
 }

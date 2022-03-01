@@ -1,34 +1,31 @@
-using System;
+namespace BTCPayServer.Models;
 
-namespace BTCPayServer.Models
+public class ConfirmModel
 {
-    public class ConfirmModel
+    private const string ButtonClassDefault = "btn-danger";
+
+    public ConfirmModel() { }
+
+    public ConfirmModel(string title, string desc, string action = null, string buttonClass = ButtonClassDefault, string actionName = null, string controllerName = null)
     {
-        private const string ButtonClassDefault = "btn-danger";
+        Title = title;
+        Description = desc;
+        Action = action;
+        ActionName = actionName;
+        ControllerName = controllerName;
+        ButtonClass = buttonClass;
 
-        public ConfirmModel() { }
-
-        public ConfirmModel(string title, string desc, string action = null, string buttonClass = ButtonClassDefault, string actionName = null, string controllerName = null)
+        if (Description.Contains("<strong>", StringComparison.InvariantCultureIgnoreCase))
         {
-            Title = title;
-            Description = desc;
-            Action = action;
-            ActionName = actionName;
-            ControllerName = controllerName;
-            ButtonClass = buttonClass;
-
-            if (Description.Contains("<strong>", StringComparison.InvariantCultureIgnoreCase))
-            {
-                DescriptionHtml = true;
-            }
+            DescriptionHtml = true;
         }
-
-        public string Title { get; set; }
-        public string Description { get; set; }
-        public bool DescriptionHtml { get; set; }
-        public string Action { get; set; }
-        public string ActionName { get; set; }
-        public string ControllerName { get; set; }
-        public string ButtonClass { get; set; } = ButtonClassDefault;
     }
+
+    public string Title { get; set; }
+    public string Description { get; set; }
+    public bool DescriptionHtml { get; set; }
+    public string Action { get; set; }
+    public string ActionName { get; set; }
+    public string ControllerName { get; set; }
+    public string ButtonClass { get; set; } = ButtonClassDefault;
 }

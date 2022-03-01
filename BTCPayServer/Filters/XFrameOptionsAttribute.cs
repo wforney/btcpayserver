@@ -1,56 +1,54 @@
-using System;
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace BTCPayServer.Filters
+namespace BTCPayServer.Filters;
+
+public class XFrameOptionsAttribute : Attribute, IActionFilter
 {
-    public class XFrameOptionsAttribute : Attribute, IActionFilter
+    public XFrameOptionsAttribute(string value)
     {
-        public XFrameOptionsAttribute(string value)
-        {
-            Value = value;
-        }
+        Value = value;
+    }
 
-        public XFrameOptionsAttribute(XFrameOptions type, string allowFrom = null)
+    public XFrameOptionsAttribute(XFrameOptions type, string allowFrom = null)
+    {
+        switch (type)
         {
-            switch (type)
-            {
-                case XFrameOptions.Deny:
-                    Value = "deny";
-                    break;
-                case XFrameOptions.SameOrigin:
-                    Value = "deny";
-                    break;
-                case XFrameOptions.AllowFrom:
-                    Value = $"allow-from {allowFrom}";
-                    break;
-                case XFrameOptions.AllowAll:
-                    Value = "allow-all";
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(type), type, null);
-            }
+            case XFrameOptions.Deny:
+                Value = "deny";
+                break;
+            case XFrameOptions.SameOrigin:
+                Value = "deny";
+                break;
+            case XFrameOptions.AllowFrom:
+                Value = $"allow-from {allowFrom}";
+                break;
+            case XFrameOptions.AllowAll:
+                Value = "allow-all";
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(type), type, null);
         }
+    }
 
-        public string Value { get; set; }
+    public string Value { get; set; }
 
-        public void OnActionExecuted(ActionExecutedContext context)
+    public void OnActionExecuted(ActionExecutedContext context)
+    {
+    }
+
+    public void OnActionExecuting(ActionExecutingContext context)
+    {
+        if (context.IsEffectivePolicy<XFrameOptionsAttribute>(this))
         {
+            context.HttpContext.Response.SetHeaderOnStarting("X-Frame-Options", Value);
         }
+    }
 
-        public void OnActionExecuting(ActionExecutingContext context)
-        {
-            if (context.IsEffectivePolicy<XFrameOptionsAttribute>(this))
-            {
-                context.HttpContext.Response.SetHeaderOnStarting("X-Frame-Options", Value);
-            }
-        }
-
-        public enum XFrameOptions
-        {
-            Deny,
-            SameOrigin,
-            AllowFrom,
-            AllowAll
-        }
+    public enum XFrameOptions
+    {
+        Deny,
+        SameOrigin,
+        AllowFrom,
+        AllowAll
     }
 }

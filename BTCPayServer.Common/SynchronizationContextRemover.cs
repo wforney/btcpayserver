@@ -1,34 +1,31 @@
-using System;
 using System.Runtime.CompilerServices;
-using System.Threading;
 
-namespace BTCPayServer
+namespace BTCPayServer;
+
+public struct SynchronizationContextRemover : INotifyCompletion
 {
-    public struct SynchronizationContextRemover : INotifyCompletion
+    public bool IsCompleted => SynchronizationContext.Current == null;
+
+    public void OnCompleted(Action continuation)
     {
-        public bool IsCompleted => SynchronizationContext.Current == null;
-
-        public void OnCompleted(Action continuation)
+        SynchronizationContext prev = SynchronizationContext.Current;
+        try
         {
-            var prev = SynchronizationContext.Current;
-            try
-            {
-                SynchronizationContext.SetSynchronizationContext(null);
-                continuation();
-            }
-            finally
-            {
-                SynchronizationContext.SetSynchronizationContext(prev);
-            }
+            SynchronizationContext.SetSynchronizationContext(null);
+            continuation();
         }
-
-        public SynchronizationContextRemover GetAwaiter()
+        finally
         {
-            return this;
+            SynchronizationContext.SetSynchronizationContext(prev);
         }
+    }
 
-        public void GetResult()
-        {
-        }
+    public SynchronizationContextRemover GetAwaiter()
+    {
+        return this;
+    }
+
+    public void GetResult()
+    {
     }
 }

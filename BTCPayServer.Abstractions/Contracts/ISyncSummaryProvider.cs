@@ -1,18 +1,15 @@
-using System.Collections.Generic;
+namespace BTCPayServer.Abstractions.Contracts;
 
-namespace BTCPayServer.Abstractions.Contracts
+public interface ISyncSummaryProvider
 {
-    public interface ISyncSummaryProvider
-    {
-        bool AllAvailable();
+    bool AllAvailable();
 
-        string Partial { get; }
-        IEnumerable<ISyncStatus> GetStatuses();
-    }
+    string Partial { get; }
+    IEnumerable<ISyncStatus> GetStatuses();
+}
 
-    public interface ISyncStatus
-    {
-        public string CryptoCode { get; set; }
-        public bool Available { get; }
-    }
+public interface ISyncStatus
+{
+    public string CryptoCode { get; set; }
+    public bool Available { get; }
 }

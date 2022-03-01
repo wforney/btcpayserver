@@ -1,67 +1,63 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using BTCPayServer.Data;
 
-namespace BTCPayServer.Logging
+namespace BTCPayServer.Logging;
+
+public class InvoiceLog
 {
-    public class InvoiceLog
+    public DateTimeOffset Timestamp { get; set; }
+    public string Log { get; set; }
+    public InvoiceEventData.EventSeverity Severity { get; set; }
+    public override string ToString()
     {
-        public DateTimeOffset Timestamp { get; set; }
-        public string Log { get; set; }
-        public InvoiceEventData.EventSeverity Severity { get; set; }
-        public override string ToString()
-        {
-            return $"{Timestamp.UtcDateTime}:{Severity} {Log}";
-        }
-
+        return $"{Timestamp.UtcDateTime}:{Severity} {Log}";
     }
-    public class InvoiceLogs
+
+}
+public class InvoiceLogs
+{
+    private readonly List<InvoiceLog> _InvoiceLogs = new List<InvoiceLog>();
+    public void Write(string data, InvoiceEventData.EventSeverity eventSeverity)
     {
-        readonly List<InvoiceLog> _InvoiceLogs = new List<InvoiceLog>();
-        public void Write(string data, InvoiceEventData.EventSeverity eventSeverity)
+        lock (_InvoiceLogs)
         {
-            lock (_InvoiceLogs)
-            {
-                _InvoiceLogs.Add(new InvoiceLog() { Timestamp = DateTimeOffset.UtcNow, Log = data, Severity = eventSeverity });
-            }
+            _InvoiceLogs.Add(new InvoiceLog() { Timestamp = DateTimeOffset.UtcNow, Log = data, Severity = eventSeverity });
         }
+    }
 
-        public List<InvoiceLog> ToList()
+    public List<InvoiceLog> ToList()
+    {
+        lock (_InvoiceLogs)
         {
-            lock (_InvoiceLogs)
-            {
-                return _InvoiceLogs.ToList();
-            }
+            return _InvoiceLogs.ToList();
         }
+    }
 
-        internal IDisposable Measure(string logs)
+    internal IDisposable Measure(string logs)
+    {
+        return new Mesuring(this, logs);
+    }
+
+    private class Mesuring : IDisposable
+    {
+        private readonly InvoiceLogs _logs;
+        private readonly string _msg;
+        private readonly DateTimeOffset _Before;
+        public Mesuring(InvoiceLogs logs, string msg)
         {
-            return new Mesuring(this, logs);
+            _logs = logs;
+            _msg = msg;
+            _Before = DateTimeOffset.UtcNow;
         }
-
-        class Mesuring : IDisposable
+        public void Dispose()
         {
-            private readonly InvoiceLogs _logs;
-            private readonly string _msg;
-            private readonly DateTimeOffset _Before;
-            public Mesuring(InvoiceLogs logs, string msg)
+            TimeSpan timespan = DateTimeOffset.UtcNow - _Before;
+            if (timespan.TotalSeconds >= 1.0)
             {
-                _logs = logs;
-                _msg = msg;
-                _Before = DateTimeOffset.UtcNow;
+                _logs.Write($"{_msg} took {(int)timespan.TotalSeconds} seconds", InvoiceEventData.EventSeverity.Info);
             }
-            public void Dispose()
+            else
             {
-                var timespan = DateTimeOffset.UtcNow - _Before;
-                if (timespan.TotalSeconds >= 1.0)
-                {
-                    _logs.Write($"{_msg} took {(int)timespan.TotalSeconds} seconds", InvoiceEventData.EventSeverity.Info);
-                }
-                else
-                {
-                    _logs.Write($"{_msg} took {(int)timespan.TotalMilliseconds} milliseconds", InvoiceEventData.EventSeverity.Info);
-                }
+                _logs.Write($"{_msg} took {(int)timespan.TotalMilliseconds} milliseconds", InvoiceEventData.EventSeverity.Info);
             }
         }
     }

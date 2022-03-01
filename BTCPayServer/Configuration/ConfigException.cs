@@ -1,12 +1,9 @@
-using System;
+namespace BTCPayServer.Configuration;
 
-namespace BTCPayServer.Configuration
+public class ConfigException : Exception
 {
-    public class ConfigException : Exception
+    public ConfigException(string message) : base(message)
     {
-        public ConfigException(string message) : base(message)
-        {
 
-        }
     }
 }

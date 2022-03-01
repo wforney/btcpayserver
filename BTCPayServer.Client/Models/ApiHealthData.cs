@@ -1,7 +1,6 @@
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class ApiHealthData
 {
-    public class ApiHealthData
-    {
-        public bool Synchronized { get; set; }
-    }
+    public bool Synchronized { get; set; }
 }

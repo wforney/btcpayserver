@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using BTCPayServer.Security;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 namespace BTCPayServer.TagHelpers;
@@ -16,8 +14,7 @@ public class CSPEventTagHelper : TagHelper
 {
     public const string EventNames = "onclick,onkeypress,onchange,onsubmit";
     private readonly ContentSecurityPolicies _csp;
-
-    readonly static HashSet<string> EventSet = EventNames.Split(',')
+    private static readonly HashSet<string> EventSet = EventNames.Split(',')
                                                 .ToHashSet();
     public CSPEventTagHelper(ContentSecurityPolicies csp)
     {
@@ -25,7 +22,7 @@ public class CSPEventTagHelper : TagHelper
     }
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
-        foreach (var attr in output.Attributes)
+        foreach (TagHelperAttribute attr in output.Attributes)
         {
             var n = attr.Name.ToLowerInvariant();
             if (EventSet.Contains(n))

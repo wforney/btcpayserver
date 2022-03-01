@@ -1,11 +1,8 @@
-using System;
+namespace BTCPayServer.Plugins.Shopify;
 
-namespace BTCPayServer.Plugins.Shopify
+public class ShopifyApiException : Exception
 {
-    public class ShopifyApiException : Exception
+    public ShopifyApiException(string message) : base(message)
     {
-        public ShopifyApiException(string message) : base(message)
-        {
-        }
     }
 }

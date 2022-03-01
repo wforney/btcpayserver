@@ -1,7 +1,6 @@
-namespace BTCPayServer.Views.PaymentRequest
+namespace BTCPayServer.Views.PaymentRequest;
+
+public enum PaymentRequestsNavPages
 {
-    public enum PaymentRequestsNavPages
-    {
-        Index, Create
-    }
+    Index, Create
 }

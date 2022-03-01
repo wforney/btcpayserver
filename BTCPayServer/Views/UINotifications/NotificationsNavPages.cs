@@ -1,7 +1,6 @@
-namespace BTCPayServer.Views.Notifications
+namespace BTCPayServer.Views.Notifications;
+
+public enum NotificationsNavPages
 {
-    public enum NotificationsNavPages
-    {
-        Index
-    }
+    Index
 }

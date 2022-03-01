@@ -1,9 +1,8 @@
-namespace BTCPayServer.Abstractions.Models
+namespace BTCPayServer.Abstractions.Models;
+
+public enum DatabaseType
 {
-    public enum DatabaseType
-    {
-        Sqlite,
-        Postgres,
-        MySQL,
-    }
+    Sqlite,
+    Postgres,
+    MySQL,
 }

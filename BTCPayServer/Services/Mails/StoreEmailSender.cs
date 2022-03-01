@@ -1,40 +1,40 @@
-using System;
-using System.Threading.Tasks;
 using BTCPayServer.Data;
 using BTCPayServer.Logging;
 using BTCPayServer.Services.Stores;
 
-namespace BTCPayServer.Services.Mails
+namespace BTCPayServer.Services.Mails;
+
+internal class StoreEmailSender : EmailSender
 {
-    class StoreEmailSender : EmailSender
+    public StoreEmailSender(StoreRepository storeRepository,
+                            EmailSender fallback,
+                            IBackgroundJobClient backgroundJobClient,
+                            string storeId,
+                            Logs logs) : base(backgroundJobClient, logs)
     {
-        public StoreEmailSender(StoreRepository storeRepository,
-                                EmailSender fallback,
-                                IBackgroundJobClient backgroundJobClient,
-                                string storeId,
-                                Logs logs) : base(backgroundJobClient, logs)
+        StoreId = storeId ?? throw new ArgumentNullException(nameof(storeId));
+        StoreRepository = storeRepository;
+        FallbackSender = fallback;
+    }
+
+    public StoreRepository StoreRepository { get; }
+    public EmailSender FallbackSender { get; }
+    public string StoreId { get; }
+
+    public override async Task<EmailSettings> GetEmailSettings()
+    {
+        StoreData store = await StoreRepository.FindStore(StoreId);
+        EmailSettings emailSettings = store.GetStoreBlob().EmailSettings;
+        if (emailSettings?.IsComplete() == true)
         {
-            StoreId = storeId ?? throw new ArgumentNullException(nameof(storeId));
-            StoreRepository = storeRepository;
-            FallbackSender = fallback;
+            return emailSettings;
         }
 
-        public StoreRepository StoreRepository { get; }
-        public EmailSender FallbackSender { get; }
-        public string StoreId { get; }
-
-        public override async Task<EmailSettings> GetEmailSettings()
+        if (FallbackSender != null)
         {
-            var store = await StoreRepository.FindStore(StoreId);
-            var emailSettings = store.GetStoreBlob().EmailSettings;
-            if (emailSettings?.IsComplete() == true)
-            {
-                return emailSettings;
-            }
-
-            if (FallbackSender != null)
-                return await FallbackSender?.GetEmailSettings();
-            return null;
+            return await FallbackSender?.GetEmailSettings();
         }
+
+        return null;
     }
 }

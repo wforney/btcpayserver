@@ -1,31 +1,26 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
+namespace BTCPayServer;
 
-namespace BTCPayServer
+public interface IDelay
 {
-    public interface IDelay
+    Task Wait(TimeSpan delay, CancellationToken cancellationToken);
+}
+
+public class TaskDelay : IDelay
+{
+    private TaskDelay()
     {
-        Task Wait(TimeSpan delay, CancellationToken cancellationToken);
+
     }
-
-    public class TaskDelay : IDelay
+    private static readonly TaskDelay _Instance = new TaskDelay();
+    public static TaskDelay Instance
     {
-        TaskDelay()
+        get
         {
-
+            return _Instance;
         }
-        private static readonly TaskDelay _Instance = new TaskDelay();
-        public static TaskDelay Instance
-        {
-            get
-            {
-                return _Instance;
-            }
-        }
-        public Task Wait(TimeSpan delay, CancellationToken cancellationToken)
-        {
-            return Task.Delay(delay, cancellationToken);
-        }
+    }
+    public Task Wait(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        return Task.Delay(delay, cancellationToken);
     }
 }

@@ -1,42 +1,40 @@
-using System.Collections.Generic;
 using BTCPayServer.Client.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
-namespace BTCPayServer.Controllers.Greenfield
+namespace BTCPayServer.Controllers.Greenfield;
+
+public static class GreenfieldUtils
 {
-    public static class GreenfieldUtils
+    public static IActionResult CreateValidationError(this ControllerBase controller, ModelStateDictionary modelState)
     {
-        public static IActionResult CreateValidationError(this ControllerBase controller, ModelStateDictionary modelState)
-        {
-            return controller.UnprocessableEntity(modelState.ToGreenfieldValidationError());
-        }
+        return controller.UnprocessableEntity(modelState.ToGreenfieldValidationError());
+    }
 
-        public static List<GreenfieldValidationError> ToGreenfieldValidationError(this ModelStateDictionary modelState)
+    public static List<GreenfieldValidationError> ToGreenfieldValidationError(this ModelStateDictionary modelState)
+    {
+        List<GreenfieldValidationError> errors = new List<GreenfieldValidationError>();
+        foreach (KeyValuePair<string, ModelStateEntry> error in modelState)
         {
-            List<GreenfieldValidationError> errors = new List<GreenfieldValidationError>();
-            foreach (var error in modelState)
+            foreach (ModelError errorMessage in error.Value.Errors)
             {
-                foreach (var errorMessage in error.Value.Errors)
-                {
-                    errors.Add(new GreenfieldValidationError(error.Key, errorMessage.ErrorMessage));
-                }
+                errors.Add(new GreenfieldValidationError(error.Key, errorMessage.ErrorMessage));
             }
-
-            return errors;
         }
 
-        public static IActionResult CreateAPIError(this ControllerBase controller, string errorCode, string errorMessage)
-        {
-            return controller.BadRequest(new GreenfieldAPIError(errorCode, errorMessage));
-        }
-        public static IActionResult CreateAPIError(this ControllerBase controller, int httpCode, string errorCode, string errorMessage)
-        {
-            return controller.StatusCode(httpCode, new GreenfieldAPIError(errorCode, errorMessage));
-        }
-        public static IActionResult CreateAPIPermissionError(this ControllerBase controller, string missingPermission, string message = null)
-        {
-            return controller.StatusCode(403, new GreenfieldPermissionAPIError(missingPermission, message));
-        }
+        return errors;
+    }
+
+    public static IActionResult CreateAPIError(this ControllerBase controller, string errorCode, string errorMessage)
+    {
+        return controller.BadRequest(new GreenfieldAPIError(errorCode, errorMessage));
+    }
+    public static IActionResult CreateAPIError(this ControllerBase controller, int httpCode, string errorCode, string errorMessage)
+    {
+        return controller.StatusCode(httpCode, new GreenfieldAPIError(errorCode, errorMessage));
+    }
+    public static IActionResult CreateAPIPermissionError(this ControllerBase controller, string missingPermission, string message = null)
+    {
+        return controller.StatusCode(403, new GreenfieldPermissionAPIError(missingPermission, message));
     }
 }

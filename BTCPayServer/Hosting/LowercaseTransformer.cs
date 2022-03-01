@@ -1,23 +1,22 @@
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
+namespace BTCPayServer.Hosting;
 
-namespace BTCPayServer.Hosting
+public class LowercaseTransformer : IOutboundParameterTransformer
 {
-    public class LowercaseTransformer : IOutboundParameterTransformer
+    public static void Register(IServiceCollection services)
     {
-        public static void Register(IServiceCollection services)
+        services.AddRouting(opts =>
         {
-            services.AddRouting(opts =>
-            {
-                opts.ConstraintMap["lowercase"] = typeof(LowercaseTransformer);
-            });
+            opts.ConstraintMap["lowercase"] = typeof(LowercaseTransformer);
+        });
+    }
+
+    public string TransformOutbound(object value)
+    {
+        if (value is not string str)
+        {
+            return null;
         }
 
-        public string TransformOutbound(object value)
-        {
-            if (value is not string str)
-                return null;
-            return str.ToLowerInvariant();
-        }
+        return str.ToLowerInvariant();
     }
 }

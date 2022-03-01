@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Models;
 using BTCPayServer.Client.Models;
 using BTCPayServer.Data;
@@ -18,12 +15,18 @@ public interface IPayoutHandler
     public (bool valid, string error) ValidateClaimDestination(IClaimDestination claimDestination, PullPaymentBlob pullPaymentBlob);
     public async Task<(IClaimDestination destination, string error)> ParseAndValidateClaimDestination(PaymentMethodId paymentMethodId, string destination, PullPaymentBlob pullPaymentBlob)
     {
-        var res = await ParseClaimDestination(paymentMethodId, destination);
+        (IClaimDestination destination, string error) res = await ParseClaimDestination(paymentMethodId, destination);
         if (res.destination is null)
+        {
             return res;
-        var res2 = ValidateClaimDestination(res.destination, pullPaymentBlob);
+        }
+
+        (bool valid, string error) res2 = ValidateClaimDestination(res.destination, pullPaymentBlob);
         if (!res2.valid)
+        {
             return (null, res2.error);
+        }
+
         return res;
     }
     public IPayoutProof ParseProof(PayoutData payout);

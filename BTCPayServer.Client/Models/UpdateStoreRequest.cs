@@ -1,6 +1,5 @@
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class UpdateStoreRequest : StoreBaseData
 {
-    public class UpdateStoreRequest : StoreBaseData
-    {
-    }
 }

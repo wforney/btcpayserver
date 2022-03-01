@@ -1,7 +1,6 @@
-namespace BTCPayServer.Components.ThemeSwitch
+namespace BTCPayServer.Components.ThemeSwitch;
+
+public class ThemeSwitchViewModel
 {
-    public class ThemeSwitchViewModel
-    {
-        public string CssClass { get; set; }
-    }
+    public string CssClass { get; set; }
 }

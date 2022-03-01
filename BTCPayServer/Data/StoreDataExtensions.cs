@@ -1,7 +1,4 @@
 #nullable enable
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using BTCPayServer.Payments;
 using BTCPayServer.Payments.Lightning;
@@ -10,183 +7,200 @@ using NBitcoin;
 using NBXplorer;
 using Newtonsoft.Json.Linq;
 
-namespace BTCPayServer.Data
+namespace BTCPayServer.Data;
+
+public static class StoreDataExtensions
 {
-    public static class StoreDataExtensions
+#pragma warning disable CS0618
+    public static PaymentMethodId? GetDefaultPaymentId(this StoreData storeData)
     {
-#pragma warning disable CS0618
-        public static PaymentMethodId? GetDefaultPaymentId(this StoreData storeData)
-        {
-            PaymentMethodId.TryParse(storeData.DefaultCrypto, out var defaultPaymentId);
-            return defaultPaymentId;
-        }
+        PaymentMethodId.TryParse(storeData.DefaultCrypto, out PaymentMethodId? defaultPaymentId);
+        return defaultPaymentId;
+    }
 
-        public static PaymentMethodId[] GetEnabledPaymentIds(this StoreData storeData, BTCPayNetworkProvider networks)
-        {
-            return GetEnabledPaymentMethods(storeData, networks).Select(method => method.PaymentId).ToArray();
-        }
+    public static PaymentMethodId[] GetEnabledPaymentIds(this StoreData storeData, BTCPayNetworkProvider networks)
+    {
+        return GetEnabledPaymentMethods(storeData, networks).Select(method => method.PaymentId).ToArray();
+    }
 
-        public static ISupportedPaymentMethod[] GetEnabledPaymentMethods(this StoreData storeData, BTCPayNetworkProvider networks)
-        {
-            var excludeFilter = storeData.GetStoreBlob().GetExcludedPaymentMethods();
-            var paymentMethodIds = storeData.GetSupportedPaymentMethods(networks)
-                .Where(a => !excludeFilter.Match(a.PaymentId))
-                .OrderByDescending(a => a.PaymentId.CryptoCode == "BTC")
-                .ThenBy(a => a.PaymentId.CryptoCode)
-                .ThenBy(a => a.PaymentId.PaymentType == PaymentTypes.LightningLike ? 1 : 0)
-                .ToArray();
-            return paymentMethodIds;
-        }
+    public static ISupportedPaymentMethod[] GetEnabledPaymentMethods(this StoreData storeData, BTCPayNetworkProvider networks)
+    {
+        IPaymentFilter? excludeFilter = storeData.GetStoreBlob().GetExcludedPaymentMethods();
+        ISupportedPaymentMethod[]? paymentMethodIds = storeData.GetSupportedPaymentMethods(networks)
+            .Where(a => !excludeFilter.Match(a.PaymentId))
+            .OrderByDescending(a => a.PaymentId.CryptoCode == "BTC")
+            .ThenBy(a => a.PaymentId.CryptoCode)
+            .ThenBy(a => a.PaymentId.PaymentType == PaymentTypes.LightningLike ? 1 : 0)
+            .ToArray();
+        return paymentMethodIds;
+    }
 
-        public static void SetDefaultPaymentId(this StoreData storeData, PaymentMethodId defaultPaymentId)
-        {
-            storeData.DefaultCrypto = defaultPaymentId?.ToString();
-        }
+    public static void SetDefaultPaymentId(this StoreData storeData, PaymentMethodId defaultPaymentId)
+    {
+        storeData.DefaultCrypto = defaultPaymentId?.ToString();
+    }
 #pragma warning restore CS0618
 
 
-        public static StoreBlob GetStoreBlob(this StoreData storeData)
+    public static StoreBlob GetStoreBlob(this StoreData storeData)
+    {
+        StoreBlob? result = storeData.StoreBlob == null ? new StoreBlob() : new Serializer(null).ToObject<StoreBlob>(Encoding.UTF8.GetString(storeData.StoreBlob));
+        if (result.PreferredExchange == null)
         {
-            var result = storeData.StoreBlob == null ? new StoreBlob() : new Serializer(null).ToObject<StoreBlob>(Encoding.UTF8.GetString(storeData.StoreBlob));
-            if (result.PreferredExchange == null)
-                result.PreferredExchange = CoinGeckoRateProvider.CoinGeckoName;
-            return result;
+            result.PreferredExchange = CoinGeckoRateProvider.CoinGeckoName;
         }
 
-        public static bool SetStoreBlob(this StoreData storeData, StoreBlob storeBlob)
+        return result;
+    }
+
+    public static bool SetStoreBlob(this StoreData storeData, StoreBlob storeBlob)
+    {
+        var original = new Serializer(null).ToString(storeData.GetStoreBlob());
+        var newBlob = new Serializer(null).ToString(storeBlob);
+        if (original == newBlob)
         {
-            var original = new Serializer(null).ToString(storeData.GetStoreBlob());
-            var newBlob = new Serializer(null).ToString(storeBlob);
-            if (original == newBlob)
-                return false;
-            storeData.StoreBlob = Encoding.UTF8.GetBytes(newBlob);
-            return true;
+            return false;
         }
 
-        public static IEnumerable<ISupportedPaymentMethod> GetSupportedPaymentMethods(this StoreData storeData, BTCPayNetworkProvider networks)
-        {
-            ArgumentNullException.ThrowIfNull(storeData);
+        storeData.StoreBlob = Encoding.UTF8.GetBytes(newBlob);
+        return true;
+    }
+
+    public static IEnumerable<ISupportedPaymentMethod> GetSupportedPaymentMethods(this StoreData storeData, BTCPayNetworkProvider networks)
+    {
+        ArgumentNullException.ThrowIfNull(storeData);
 #pragma warning disable CS0618
-            bool btcReturned = false;
+        bool btcReturned = false;
 
-            if (!string.IsNullOrEmpty(storeData.DerivationStrategies))
-            {
-                JObject strategies = JObject.Parse(storeData.DerivationStrategies);
-                foreach (var strat in strategies.Properties())
-                {
-                    if (!PaymentMethodId.TryParse(strat.Name, out var paymentMethodId))
-                    {
-                        continue;
-                    }
-                    var network = networks.GetNetwork<BTCPayNetworkBase>(paymentMethodId.CryptoCode);
-                    if (network != null)
-                    {
-                        if (network == networks.BTC && paymentMethodId.PaymentType == PaymentTypes.BTCLike && btcReturned)
-                            continue;
-                        if (strat.Value.Type == JTokenType.Null)
-                            continue;
-                        yield return
-                            paymentMethodId.PaymentType.DeserializeSupportedPaymentMethod(network, strat.Value);
-                    }
-                }
-            }
-#pragma warning restore CS0618
-        }
-
-        public static void SetSupportedPaymentMethod(this StoreData storeData, ISupportedPaymentMethod supportedPaymentMethod)
+        if (!string.IsNullOrEmpty(storeData.DerivationStrategies))
         {
-            storeData.SetSupportedPaymentMethod(null, supportedPaymentMethod);
-        }
-
-        /// <summary>
-        /// Set or remove a new supported payment method for the store
-        /// </summary>
-        /// <param name="paymentMethodId">The paymentMethodId</param>
-        /// <param name="supportedPaymentMethod">The payment method, or null to remove</param>
-        public static void SetSupportedPaymentMethod(this StoreData storeData, PaymentMethodId? paymentMethodId, ISupportedPaymentMethod? supportedPaymentMethod)
-        {
-            if (supportedPaymentMethod != null && paymentMethodId != null && paymentMethodId != supportedPaymentMethod.PaymentId)
+            JObject strategies = JObject.Parse(storeData.DerivationStrategies);
+            foreach (JProperty? strat in strategies.Properties())
             {
-                throw new InvalidOperationException("Incoherent arguments, this should never happen");
-            }
-            if (supportedPaymentMethod == null && paymentMethodId == null)
-                throw new ArgumentException($"{nameof(supportedPaymentMethod)} or {nameof(paymentMethodId)} should be specified");
-            if (supportedPaymentMethod != null && paymentMethodId == null)
-            {
-                paymentMethodId = supportedPaymentMethod.PaymentId;
-            }
-
-#pragma warning disable CS0618
-            JObject strategies = string.IsNullOrEmpty(storeData.DerivationStrategies) ? new JObject() : JObject.Parse(storeData.DerivationStrategies);
-            bool existing = false;
-            foreach (var strat in strategies.Properties().ToList())
-            {
-                if (!PaymentMethodId.TryParse(strat.Name, out var stratId))
+                if (!PaymentMethodId.TryParse(strat.Name, out PaymentMethodId? paymentMethodId))
                 {
                     continue;
                 }
-                if (stratId == paymentMethodId)
+                BTCPayNetworkBase? network = networks.GetNetwork<BTCPayNetworkBase>(paymentMethodId.CryptoCode);
+                if (network != null)
                 {
-                    if (supportedPaymentMethod == null)
+                    if (network == networks.BTC && paymentMethodId.PaymentType == PaymentTypes.BTCLike && btcReturned)
                     {
-                        strat.Remove();
+                        continue;
                     }
-                    else
+
+                    if (strat.Value.Type == JTokenType.Null)
                     {
-                        strat.Value = PaymentMethodExtensions.Serialize(supportedPaymentMethod);
+                        continue;
                     }
-                    existing = true;
-                    break;
+
+                    yield return
+                        paymentMethodId.PaymentType.DeserializeSupportedPaymentMethod(network, strat.Value);
                 }
             }
-            if (!existing && supportedPaymentMethod != null)
-                strategies.Add(new JProperty(supportedPaymentMethod.PaymentId.ToString(), PaymentMethodExtensions.Serialize(supportedPaymentMethod)));
-            storeData.DerivationStrategies = strategies.ToString();
+        }
 #pragma warning restore CS0618
-        }
+    }
 
-        public static bool IsLightningEnabled(this StoreData storeData, BTCPayNetworkProvider networks)
+    public static void SetSupportedPaymentMethod(this StoreData storeData, ISupportedPaymentMethod supportedPaymentMethod)
+    {
+        storeData.SetSupportedPaymentMethod(null, supportedPaymentMethod);
+    }
+
+    /// <summary>
+    /// Set or remove a new supported payment method for the store
+    /// </summary>
+    /// <param name="paymentMethodId">The paymentMethodId</param>
+    /// <param name="supportedPaymentMethod">The payment method, or null to remove</param>
+    public static void SetSupportedPaymentMethod(this StoreData storeData, PaymentMethodId? paymentMethodId, ISupportedPaymentMethod? supportedPaymentMethod)
+    {
+        if (supportedPaymentMethod != null && paymentMethodId != null && paymentMethodId != supportedPaymentMethod.PaymentId)
         {
-            var paymentMethods = storeData.GetSupportedPaymentMethods(networks);
-            var lightningByCryptoCode = paymentMethods
-                    .OfType<LightningSupportedPaymentMethod>()
-                    .Where(method => method.PaymentId.PaymentType == LightningPaymentType.Instance)
-                    .ToDictionary(c => c.CryptoCode.ToUpperInvariant());
-            var excludeFilters = storeData.GetStoreBlob().GetExcludedPaymentMethods();
-            var isLightningEnabled = false;
-            foreach (var paymentMethod in paymentMethods)
-            {
-                var paymentMethodId = paymentMethod.PaymentId;
-                switch (paymentMethodId.PaymentType)
-                {
-                    // LNURLPayPaymentType is a subclass of LightningPaymentType, skip it
-                    case LNURLPayPaymentType lnurlPayPaymentType:
-                        break;
-                    case LightningPaymentType _:
-                        var lightning = lightningByCryptoCode.TryGet(paymentMethodId.CryptoCode);
-                        isLightningEnabled = !excludeFilters.Match(paymentMethodId) && lightning != null;
-                        break;
-                }
-            }
-
-            return isLightningEnabled;
+            throw new InvalidOperationException("Incoherent arguments, this should never happen");
         }
-
-        public static bool IsLNUrlEnabled(this StoreData storeData, BTCPayNetworkProvider networks)
+        if (supportedPaymentMethod == null && paymentMethodId == null)
         {
-            var paymentMethods = storeData.GetSupportedPaymentMethods(networks);
-            var excludeFilters = storeData.GetStoreBlob().GetExcludedPaymentMethods();
-            var isLNUrlEnabled = false;
-            foreach (var paymentMethod in paymentMethods)
-            {
-                var paymentMethodId = paymentMethod.PaymentId;
-                if (paymentMethodId.PaymentType is LNURLPayPaymentType)
-                {
-                    isLNUrlEnabled = !excludeFilters.Match(paymentMethodId);
-                }
-            }
-
-            return isLNUrlEnabled;
+            throw new ArgumentException($"{nameof(supportedPaymentMethod)} or {nameof(paymentMethodId)} should be specified");
         }
+
+        if (supportedPaymentMethod != null && paymentMethodId == null)
+        {
+            paymentMethodId = supportedPaymentMethod.PaymentId;
+        }
+
+#pragma warning disable CS0618
+        JObject strategies = string.IsNullOrEmpty(storeData.DerivationStrategies) ? new JObject() : JObject.Parse(storeData.DerivationStrategies);
+        bool existing = false;
+        foreach (JProperty? strat in strategies.Properties().ToList())
+        {
+            if (!PaymentMethodId.TryParse(strat.Name, out PaymentMethodId? stratId))
+            {
+                continue;
+            }
+            if (stratId == paymentMethodId)
+            {
+                if (supportedPaymentMethod == null)
+                {
+                    strat.Remove();
+                }
+                else
+                {
+                    strat.Value = PaymentMethodExtensions.Serialize(supportedPaymentMethod);
+                }
+                existing = true;
+                break;
+            }
+        }
+        if (!existing && supportedPaymentMethod != null)
+        {
+            strategies.Add(new JProperty(supportedPaymentMethod.PaymentId.ToString(), PaymentMethodExtensions.Serialize(supportedPaymentMethod)));
+        }
+
+        storeData.DerivationStrategies = strategies.ToString();
+#pragma warning restore CS0618
+    }
+
+    public static bool IsLightningEnabled(this StoreData storeData, BTCPayNetworkProvider networks)
+    {
+        IEnumerable<ISupportedPaymentMethod>? paymentMethods = storeData.GetSupportedPaymentMethods(networks);
+        var lightningByCryptoCode = paymentMethods
+                .OfType<LightningSupportedPaymentMethod>()
+                .Where(method => method.PaymentId.PaymentType == LightningPaymentType.Instance)
+                .ToDictionary(c => c.CryptoCode.ToUpperInvariant());
+        IPaymentFilter? excludeFilters = storeData.GetStoreBlob().GetExcludedPaymentMethods();
+        var isLightningEnabled = false;
+        foreach (ISupportedPaymentMethod? paymentMethod in paymentMethods)
+        {
+            PaymentMethodId? paymentMethodId = paymentMethod.PaymentId;
+            switch (paymentMethodId.PaymentType)
+            {
+                // LNURLPayPaymentType is a subclass of LightningPaymentType, skip it
+                case LNURLPayPaymentType lnurlPayPaymentType:
+                    break;
+                case LightningPaymentType _:
+                    LightningSupportedPaymentMethod? lightning = lightningByCryptoCode.TryGet(paymentMethodId.CryptoCode);
+                    isLightningEnabled = !excludeFilters.Match(paymentMethodId) && lightning != null;
+                    break;
+            }
+        }
+
+        return isLightningEnabled;
+    }
+
+    public static bool IsLNUrlEnabled(this StoreData storeData, BTCPayNetworkProvider networks)
+    {
+        IEnumerable<ISupportedPaymentMethod>? paymentMethods = storeData.GetSupportedPaymentMethods(networks);
+        IPaymentFilter? excludeFilters = storeData.GetStoreBlob().GetExcludedPaymentMethods();
+        var isLNUrlEnabled = false;
+        foreach (ISupportedPaymentMethod? paymentMethod in paymentMethods)
+        {
+            PaymentMethodId? paymentMethodId = paymentMethod.PaymentId;
+            if (paymentMethodId.PaymentType is LNURLPayPaymentType)
+            {
+                isLNUrlEnabled = !excludeFilters.Match(paymentMethodId);
+            }
+        }
+
+        return isLNUrlEnabled;
     }
 }

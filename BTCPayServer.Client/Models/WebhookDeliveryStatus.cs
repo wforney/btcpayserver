@@ -1,13 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.Text;
+namespace BTCPayServer.Client.Models;
 
-namespace BTCPayServer.Client.Models
+public enum WebhookDeliveryStatus
 {
-    public enum WebhookDeliveryStatus
-    {
-        Failed,
-        HttpError,
-        HttpSuccess
-    }
+    Failed,
+    HttpError,
+    HttpSuccess
 }

@@ -1,112 +1,117 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
-using System.Threading.Tasks;
 using BTCPayServer.Services.Stores;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NBitcoin;
 using NBitcoin.DataEncoders;
 using NBitpayClient.Extensions;
 
 
-namespace BTCPayServer.Security.Bitpay
+namespace BTCPayServer.Security.Bitpay;
+
+public class BitpayAuthenticationHandler : AuthenticationHandler<BitpayAuthenticationOptions>
 {
-    public class BitpayAuthenticationHandler : AuthenticationHandler<BitpayAuthenticationOptions>
+    private readonly StoreRepository _StoreRepository;
+    private readonly TokenRepository _TokenRepository;
+    public BitpayAuthenticationHandler(
+        TokenRepository tokenRepository,
+        StoreRepository storeRepository,
+        IOptionsMonitor<BitpayAuthenticationOptions> options, ILoggerFactory logger, UrlEncoder encoder, ISystemClock clock) : base(options, logger, encoder, clock)
     {
-        readonly StoreRepository _StoreRepository;
-        readonly TokenRepository _TokenRepository;
-        public BitpayAuthenticationHandler(
-            TokenRepository tokenRepository,
-            StoreRepository storeRepository,
-            IOptionsMonitor<BitpayAuthenticationOptions> options, ILoggerFactory logger, UrlEncoder encoder, ISystemClock clock) : base(options, logger, encoder, clock)
+        _TokenRepository = tokenRepository;
+        _StoreRepository = storeRepository;
+    }
+
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        if (!Context.Request.HttpContext.TryGetBitpayAuth(out (string Signature, string Id, string Authorization) bitpayAuth))
         {
-            _TokenRepository = tokenRepository;
-            _StoreRepository = storeRepository;
+            return AuthenticateResult.NoResult();
         }
 
-        protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+        if (!string.IsNullOrEmpty(bitpayAuth.Signature) && !string.IsNullOrEmpty(bitpayAuth.Id))
         {
-            if (!Context.Request.HttpContext.TryGetBitpayAuth(out var bitpayAuth))
-                return AuthenticateResult.NoResult();
-            if (!string.IsNullOrEmpty(bitpayAuth.Signature) && !string.IsNullOrEmpty(bitpayAuth.Id))
+            var sin = await CheckBitId(Context.Request.HttpContext, bitpayAuth.Signature, bitpayAuth.Id);
+            if (sin == null)
             {
-                var sin = await CheckBitId(Context.Request.HttpContext, bitpayAuth.Signature, bitpayAuth.Id);
-                if (sin == null)
-                    return AuthenticateResult.Fail("BitId authentication failed");
-                return Success(BitpayClaims.SIN, sin, BitpayAuthenticationTypes.SinAuthentication);
+                return AuthenticateResult.Fail("BitId authentication failed");
             }
-            else if (!string.IsNullOrEmpty(bitpayAuth.Authorization))
+
+            return Success(BitpayClaims.SIN, sin, BitpayAuthenticationTypes.SinAuthentication);
+        }
+        else if (!string.IsNullOrEmpty(bitpayAuth.Authorization))
+        {
+            var storeId = await GetStoreIdFromAuth(Context.Request.HttpContext, bitpayAuth.Authorization);
+            if (storeId == null)
             {
-                var storeId = await GetStoreIdFromAuth(Context.Request.HttpContext, bitpayAuth.Authorization);
-                if (storeId == null)
-                    return AuthenticateResult.Fail("ApiKey authentication failed");
-                return Success(BitpayClaims.ApiKeyStoreId, storeId, BitpayAuthenticationTypes.ApiKeyAuthentication);
+                return AuthenticateResult.Fail("ApiKey authentication failed");
             }
-            else
-            {
-                return Success(null, null, BitpayAuthenticationTypes.Anonymous);
-            }
+
+            return Success(BitpayClaims.ApiKeyStoreId, storeId, BitpayAuthenticationTypes.ApiKeyAuthentication);
+        }
+        else
+        {
+            return Success(null, null, BitpayAuthenticationTypes.Anonymous);
+        }
+    }
+
+    private AuthenticateResult Success(string claimType, string claimValue, string authenticationType)
+    {
+        List<Claim> claims = new List<Claim>();
+        if (claimType != null)
+        {
+            claims.Add(new Claim(claimType, claimValue));
         }
 
-        private AuthenticateResult Success(string claimType, string claimValue, string authenticationType)
+        return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType)), authenticationType));
+    }
+
+    private async Task<string> CheckBitId(HttpContext httpContext, string sig, string id)
+    {
+        httpContext.Request.EnableBuffering();
+        string body = string.Empty;
+        if (httpContext.Request.ContentLength != 0 && httpContext.Request.Body != null)
         {
-            List<Claim> claims = new List<Claim>();
-            if (claimType != null)
-                claims.Add(new Claim(claimType, claimValue));
-            return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType)), authenticationType));
+            using (StreamReader reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8, true, 1024, true))
+            {
+                body = await reader.ReadToEndAsync();
+            }
+            httpContext.Request.Body.Position = 0;
         }
 
-        private async Task<string> CheckBitId(HttpContext httpContext, string sig, string id)
+        var url = httpContext.Request.GetEncodedUrl();
+        try
         {
-            httpContext.Request.EnableBuffering();
-            string body = string.Empty;
-            if (httpContext.Request.ContentLength != 0 && httpContext.Request.Body != null)
+            var key = new PubKey(id);
+            if (BitIdExtensions.CheckBitIDSignature(key, sig, url, body))
             {
-                using (StreamReader reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8, true, 1024, true))
-                {
-                    body = await reader.ReadToEndAsync();
-                }
-                httpContext.Request.Body.Position = 0;
+                return key.GetBitIDSIN();
             }
+        }
+        catch { }
+        return null;
+    }
 
-            var url = httpContext.Request.GetEncodedUrl();
-            try
-            {
-                var key = new PubKey(id);
-                if (BitIdExtensions.CheckBitIDSignature(key, sig, url, body))
-                {
-                    return key.GetBitIDSIN();
-                }
-            }
-            catch { }
+    private async Task<string> GetStoreIdFromAuth(HttpContext httpContext, string auth)
+    {
+        var splitted = auth.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (splitted.Length != 2 || !splitted[0].Equals("Basic", StringComparison.OrdinalIgnoreCase))
+        {
             return null;
         }
 
-        private async Task<string> GetStoreIdFromAuth(HttpContext httpContext, string auth)
+        string apiKey = null;
+        try
         {
-            var splitted = auth.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (splitted.Length != 2 || !splitted[0].Equals("Basic", StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            string apiKey = null;
-            try
-            {
-                apiKey = Encoders.ASCII.EncodeData(Encoders.Base64.DecodeData(splitted[1]));
-            }
-            catch
-            {
-                return null;
-            }
-            return await _TokenRepository.GetStoreIdFromAPIKey(apiKey);
+            apiKey = Encoders.ASCII.EncodeData(Encoders.Base64.DecodeData(splitted[1]));
         }
+        catch
+        {
+            return null;
+        }
+        return await _TokenRepository.GetStoreIdFromAPIKey(apiKey);
     }
 }

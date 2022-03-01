@@ -1,34 +1,30 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using BTCPayServer.Plugins.Test.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace BTCPayServer.Plugins.Test.Services
+namespace BTCPayServer.Plugins.Test.Services;
+
+public class TestPluginService
 {
-    public class TestPluginService
+    private readonly TestPluginDbContextFactory _testPluginDbContextFactory;
+
+    public TestPluginService(TestPluginDbContextFactory testPluginDbContextFactory)
     {
-        private readonly TestPluginDbContextFactory _testPluginDbContextFactory;
+        _testPluginDbContextFactory = testPluginDbContextFactory;
+    }
 
-        public TestPluginService(TestPluginDbContextFactory testPluginDbContextFactory)
-        {
-            _testPluginDbContextFactory = testPluginDbContextFactory;
-        }
+    public async Task AddTestDataRecord()
+    {
+        await using TestPluginDbContext context = _testPluginDbContextFactory.CreateContext();
 
-        public async Task AddTestDataRecord()
-        {
-            await using var context = _testPluginDbContextFactory.CreateContext();
-
-            await context.TestPluginRecords.AddAsync(new TestPluginData() { Timestamp = DateTimeOffset.UtcNow });
-            await context.SaveChangesAsync();
-        }
+        await context.TestPluginRecords.AddAsync(new TestPluginData() { Timestamp = DateTimeOffset.UtcNow });
+        await context.SaveChangesAsync();
+    }
 
 
-        public async Task<List<TestPluginData>> Get()
-        {
-            await using var context = _testPluginDbContextFactory.CreateContext();
+    public async Task<List<TestPluginData>> Get()
+    {
+        await using TestPluginDbContext context = _testPluginDbContextFactory.CreateContext();
 
-            return await context.TestPluginRecords.ToListAsync();
-        }
+        return await context.TestPluginRecords.ToListAsync();
     }
 }

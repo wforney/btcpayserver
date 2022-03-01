@@ -1,19 +1,15 @@
-using System;
-using System.Collections.Generic;
+namespace BTCPayServer;
 
-namespace BTCPayServer
+public class StoreRoles
 {
-    public class StoreRoles
+    public const string Owner = "Owner";
+    public const string Guest = "Guest";
+    public static IEnumerable<string> AllRoles
     {
-        public const string Owner = "Owner";
-        public const string Guest = "Guest";
-        public static IEnumerable<String> AllRoles
+        get
         {
-            get
-            {
-                yield return Owner;
-                yield return Guest;
-            }
+            yield return Owner;
+            yield return Guest;
         }
     }
 }

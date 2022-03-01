@@ -1,7 +1,6 @@
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class AddCustomerEmailRequest
 {
-    public class AddCustomerEmailRequest
-    {
-        public string Email { get; set; }
-    }
+    public string Email { get; set; }
 }

@@ -1,27 +1,25 @@
-using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 
-namespace BTCPayServer.Payments
+namespace BTCPayServer.Payments;
+
+/// <summary>
+/// Represent information necessary to track a payment
+/// </summary>
+public interface IPaymentMethodDetails
 {
     /// <summary>
-    /// Represent information necessary to track a payment
+    /// A string representation of the payment destination
     /// </summary>
-    public interface IPaymentMethodDetails
-    {
-        /// <summary>
-        /// A string representation of the payment destination
-        /// </summary>
-        /// <returns></returns>
-        string GetPaymentDestination();
-        PaymentType GetPaymentType();
-        /// <summary>
-        /// Returns fee that the merchant charge to the customer for the next payment
-        /// </summary>
-        /// <returns></returns>
-        decimal GetNextNetworkFee();
+    /// <returns></returns>
+    string GetPaymentDestination();
+    PaymentType GetPaymentType();
+    /// <summary>
+    /// Returns fee that the merchant charge to the customer for the next payment
+    /// </summary>
+    /// <returns></returns>
+    decimal GetNextNetworkFee();
 
-        bool Activated { get; set; }
-        virtual string GetAdditionalDataPartialName() => null;
-        virtual JObject GetAdditionalData() => new();
-    }
+    bool Activated { get; set; }
+    virtual string GetAdditionalDataPartialName() => null;
+    virtual JObject GetAdditionalData() => new();
 }

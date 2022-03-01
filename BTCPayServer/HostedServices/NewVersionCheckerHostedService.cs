@@ -1,131 +1,127 @@
-using System;
-using System.Net.Http;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 using BTCPayServer.Configuration;
 using BTCPayServer.Logging;
 using BTCPayServer.Services;
 using BTCPayServer.Services.Notifications;
 using BTCPayServer.Services.Notifications.Blobs;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 
-namespace BTCPayServer.HostedServices
+namespace BTCPayServer.HostedServices;
+
+public class NewVersionCheckerHostedService : BaseAsyncService
 {
-    public class NewVersionCheckerHostedService : BaseAsyncService
+    private readonly SettingsRepository _settingsRepository;
+    private readonly BTCPayServerEnvironment _env;
+    private readonly NotificationSender _notificationSender;
+    private readonly IVersionFetcher _versionFetcher;
+
+    public NewVersionCheckerHostedService(SettingsRepository settingsRepository, BTCPayServerEnvironment env,
+        NotificationSender notificationSender, IVersionFetcher versionFetcher, Logs logs) : base(logs)
     {
-        private readonly SettingsRepository _settingsRepository;
-        private readonly BTCPayServerEnvironment _env;
-        private readonly NotificationSender _notificationSender;
-        private readonly IVersionFetcher _versionFetcher;
+        _settingsRepository = settingsRepository;
+        _env = env;
+        _notificationSender = notificationSender;
+        _versionFetcher = versionFetcher;
+    }
 
-        public NewVersionCheckerHostedService(SettingsRepository settingsRepository, BTCPayServerEnvironment env,
-            NotificationSender notificationSender, IVersionFetcher versionFetcher, Logs logs) : base(logs)
+    internal override Task[] InitializeTasks()
+    {
+        return new Task[] { CreateLoopTask(LoopVersionCheck) };
+    }
+
+    protected async Task LoopVersionCheck()
+    {
+        try
         {
-            _settingsRepository = settingsRepository;
-            _env = env;
-            _notificationSender = notificationSender;
-            _versionFetcher = versionFetcher;
+            await ProcessVersionCheck();
         }
-
-        internal override Task[] InitializeTasks()
+        catch (Exception ex)
         {
-            return new Task[] { CreateLoopTask(LoopVersionCheck) };
+            Logs.Events.LogError(ex, "Error while performing new version check");
         }
+        await Task.Delay(TimeSpan.FromDays(1), Cancellation);
+    }
 
-        protected async Task LoopVersionCheck()
+    public async Task ProcessVersionCheck()
+    {
+        PoliciesSettings policies = await _settingsRepository.GetSettingAsync<PoliciesSettings>() ?? new PoliciesSettings();
+        if (policies.CheckForNewVersions)
         {
-            try
+            var tag = await _versionFetcher.Fetch(Cancellation);
+            if (tag != null && tag != _env.Version)
             {
-                await ProcessVersionCheck();
-            }
-            catch (Exception ex)
-            {
-                Logs.Events.LogError(ex, "Error while performing new version check");
-            }
-            await Task.Delay(TimeSpan.FromDays(1), Cancellation);
-        }
-
-        public async Task ProcessVersionCheck()
-        {
-            var policies = await _settingsRepository.GetSettingAsync<PoliciesSettings>() ?? new PoliciesSettings();
-            if (policies.CheckForNewVersions)
-            {
-                var tag = await _versionFetcher.Fetch(Cancellation);
-                if (tag != null && tag != _env.Version)
+                NewVersionCheckerDataHolder dh = await _settingsRepository.GetSettingAsync<NewVersionCheckerDataHolder>() ?? new NewVersionCheckerDataHolder();
+                if (dh.LastVersion != tag)
                 {
-                    var dh = await _settingsRepository.GetSettingAsync<NewVersionCheckerDataHolder>() ?? new NewVersionCheckerDataHolder();
-                    if (dh.LastVersion != tag)
-                    {
-                        await _notificationSender.SendNotification(new AdminScope(), new NewVersionNotification(tag));
+                    await _notificationSender.SendNotification(new AdminScope(), new NewVersionNotification(tag));
 
-                        dh.LastVersion = tag;
-                        await _settingsRepository.UpdateSetting(dh);
-                    }
+                    dh.LastVersion = tag;
+                    await _settingsRepository.UpdateSetting(dh);
                 }
             }
         }
     }
+}
 
-    public class NewVersionCheckerDataHolder
+public class NewVersionCheckerDataHolder
+{
+    public string LastVersion { get; set; }
+}
+
+public interface IVersionFetcher
+{
+    Task<string> Fetch(CancellationToken cancellation);
+}
+
+public class GithubVersionFetcher : IVersionFetcher
+{
+    public Logs Logs { get; }
+
+    private readonly HttpClient _httpClient;
+    private readonly Uri _updateurl;
+    public GithubVersionFetcher(IHttpClientFactory httpClientFactory, BTCPayServerOptions options, Logs logs)
     {
-        public string LastVersion { get; set; }
+        Logs = logs;
+        _httpClient = httpClientFactory.CreateClient(nameof(GithubVersionFetcher));
+        _httpClient.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+        _httpClient.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer/NewVersionChecker");
+
+        _updateurl = options.UpdateUrl;
     }
 
-    public interface IVersionFetcher
+    private static readonly Regex _releaseVersionTag = new Regex("^(v[1-9]+(\\.[0-9]+)*(-[0-9]+)?)$");
+    public async Task<string> Fetch(CancellationToken cancellation)
     {
-        Task<string> Fetch(CancellationToken cancellation);
-    }
-
-    public class GithubVersionFetcher : IVersionFetcher
-    {
-        public Logs Logs { get; }
-
-        private readonly HttpClient _httpClient;
-        private readonly Uri _updateurl;
-        public GithubVersionFetcher(IHttpClientFactory httpClientFactory, BTCPayServerOptions options, Logs logs)
+        if (_updateurl == null)
         {
-            Logs = logs;
-            _httpClient = httpClientFactory.CreateClient(nameof(GithubVersionFetcher));
-            _httpClient.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer/NewVersionChecker");
-
-            _updateurl = options.UpdateUrl;
+            return null;
         }
 
-        private static readonly Regex _releaseVersionTag = new Regex("^(v[1-9]+(\\.[0-9]+)*(-[0-9]+)?)$");
-        public async Task<string> Fetch(CancellationToken cancellation)
+        using (HttpResponseMessage resp = await _httpClient.GetAsync(_updateurl, cancellation))
         {
-            if (_updateurl == null)
-                return null;
-
-            using (var resp = await _httpClient.GetAsync(_updateurl, cancellation))
+            var strResp = await resp.Content.ReadAsStringAsync();
+            if (resp.IsSuccessStatusCode)
             {
-                var strResp = await resp.Content.ReadAsStringAsync();
-                if (resp.IsSuccessStatusCode)
-                {
-                    var jobj = JObject.Parse(strResp);
-                    var tag = jobj["tag_name"].ToString();
+                var jobj = JObject.Parse(strResp);
+                var tag = jobj["tag_name"].ToString();
 
-                    var isReleaseVersionTag = _releaseVersionTag.IsMatch(tag);
-                    if (isReleaseVersionTag)
-                    {
-                        return tag.TrimStart('v');
-                    }
-                    else
-                    {
-                        return null;
-                    }
+                var isReleaseVersionTag = _releaseVersionTag.IsMatch(tag);
+                if (isReleaseVersionTag)
+                {
+                    return tag.TrimStart('v');
                 }
                 else
                 {
-                    Logs.Events.LogWarning($"Unsuccessful status code returned during new version check. " +
-                        $"Url: {_updateurl}, HTTP Code: {resp.StatusCode}, Response Body: {strResp}");
+                    return null;
                 }
             }
-
-            return null;
+            else
+            {
+                Logs.Events.LogWarning($"Unsuccessful status code returned during new version check. " +
+                    $"Url: {_updateurl}, HTTP Code: {resp.StatusCode}, Response Body: {strResp}");
+            }
         }
+
+        return null;
     }
 }

@@ -4,27 +4,26 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 
-namespace BTCPayServer.Controllers.Greenfield
-{
-    [Controller]
-    [EnableCors(CorsPolicies.All)]
-    public class GreenfieldHealthController : ControllerBase
-    {
-        private readonly NBXplorerDashboard _dashBoard;
+namespace BTCPayServer.Controllers.Greenfield;
 
-        public GreenfieldHealthController(NBXplorerDashboard dashBoard)
+[Controller]
+[EnableCors(CorsPolicies.All)]
+public class GreenfieldHealthController : ControllerBase
+{
+    private readonly NBXplorerDashboard _dashBoard;
+
+    public GreenfieldHealthController(NBXplorerDashboard dashBoard)
+    {
+        _dashBoard = dashBoard;
+    }
+    [AllowAnonymous]
+    [HttpGet("~/api/v1/health")]
+    public ActionResult GetHealth()
+    {
+        ApiHealthData model = new ApiHealthData()
         {
-            _dashBoard = dashBoard;
-        }
-        [AllowAnonymous]
-        [HttpGet("~/api/v1/health")]
-        public ActionResult GetHealth()
-        {
-            ApiHealthData model = new ApiHealthData()
-            {
-                Synchronized = _dashBoard.IsFullySynched()
-            };
-            return Ok(model);
-        }
+            Synchronized = _dashBoard.IsFullySynched()
+        };
+        return Ok(model);
     }
 }

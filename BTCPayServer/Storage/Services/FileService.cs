@@ -1,84 +1,93 @@
 #nullable enable
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using BTCPayServer.Data;
 using BTCPayServer.Services;
 using BTCPayServer.Storage.Models;
 using BTCPayServer.Storage.Services.Providers;
-using Microsoft.AspNetCore.Http;
 
-namespace BTCPayServer.Storage.Services
+namespace BTCPayServer.Storage.Services;
+
+public class FileService
 {
-    public class FileService
+    private readonly StoredFileRepository _FileRepository;
+    private readonly IEnumerable<IStorageProviderService> _providers;
+    private readonly SettingsRepository _SettingsRepository;
+
+    public FileService(StoredFileRepository fileRepository, IEnumerable<IStorageProviderService> providers,
+        SettingsRepository settingsRepository)
     {
-        private readonly StoredFileRepository _FileRepository;
-        private readonly IEnumerable<IStorageProviderService> _providers;
-        private readonly SettingsRepository _SettingsRepository;
+        _FileRepository = fileRepository;
+        _providers = providers;
+        _SettingsRepository = settingsRepository;
+    }
 
-        public FileService(StoredFileRepository fileRepository, IEnumerable<IStorageProviderService> providers,
-            SettingsRepository settingsRepository)
+    public async Task<StoredFile> AddFile(IFormFile file, string userId)
+    {
+        StorageSettings? settings = await _SettingsRepository.GetSettingAsync<StorageSettings>();
+        if (settings is null)
         {
-            _FileRepository = fileRepository;
-            _providers = providers;
-            _SettingsRepository = settingsRepository;
+            throw new InvalidOperationException("StoreSettings not configured");
         }
 
-        public async Task<StoredFile> AddFile(IFormFile file, string userId)
+        if (!file.FileName.IsValidFileName())
         {
-            var settings = await _SettingsRepository.GetSettingAsync<StorageSettings>();
-            if (settings is null)
-                throw new InvalidOperationException("StoreSettings not configured");
-            if (!file.FileName.IsValidFileName())
-                throw new InvalidOperationException("Invalid file name");
-            var provider = GetProvider(settings);
-
-            var storedFile = await provider.AddFile(file, settings);
-            storedFile.ApplicationUserId = userId;
-            await _FileRepository.AddFile(storedFile);
-            return storedFile;
+            throw new InvalidOperationException("Invalid file name");
         }
 
-        public async Task<string?> GetFileUrl(Uri baseUri, string fileId)
+        IStorageProviderService? provider = GetProvider(settings);
+
+        StoredFile? storedFile = await provider.AddFile(file, settings);
+        storedFile.ApplicationUserId = userId;
+        await _FileRepository.AddFile(storedFile);
+        return storedFile;
+    }
+
+    public async Task<string?> GetFileUrl(Uri baseUri, string fileId)
+    {
+        StorageSettings? settings = await _SettingsRepository.GetSettingAsync<StorageSettings>();
+        if (settings is null)
         {
-            var settings = await _SettingsRepository.GetSettingAsync<StorageSettings>();
-            if (settings is null)
-                return null;
-            var provider = GetProvider(settings);
-            var storedFile = await _FileRepository.GetFile(fileId);
-            return storedFile == null ? null : await provider.GetFileUrl(baseUri, storedFile, settings);
+            return null;
         }
 
-        public async Task<string?> GetTemporaryFileUrl(Uri baseUri, string fileId, DateTimeOffset expiry,
-            bool isDownload)
+        IStorageProviderService? provider = GetProvider(settings);
+        StoredFile? storedFile = await _FileRepository.GetFile(fileId);
+        return storedFile == null ? null : await provider.GetFileUrl(baseUri, storedFile, settings);
+    }
+
+    public async Task<string?> GetTemporaryFileUrl(Uri baseUri, string fileId, DateTimeOffset expiry,
+        bool isDownload)
+    {
+        StorageSettings? settings = await _SettingsRepository.GetSettingAsync<StorageSettings>();
+        if (settings is null)
         {
-            var settings = await _SettingsRepository.GetSettingAsync<StorageSettings>();
-            if (settings is null)
-                return null;
-            var provider = GetProvider(settings);
-            var storedFile = await _FileRepository.GetFile(fileId);
-            return storedFile == null ? null : await provider.GetTemporaryFileUrl(baseUri, storedFile, settings, expiry, isDownload);
+            return null;
         }
 
-        public async Task RemoveFile(string fileId, string userId)
+        IStorageProviderService? provider = GetProvider(settings);
+        StoredFile? storedFile = await _FileRepository.GetFile(fileId);
+        return storedFile == null ? null : await provider.GetTemporaryFileUrl(baseUri, storedFile, settings, expiry, isDownload);
+    }
+
+    public async Task RemoveFile(string fileId, string userId)
+    {
+        StorageSettings? settings = await _SettingsRepository.GetSettingAsync<StorageSettings>();
+        if (settings is null)
         {
-            var settings = await _SettingsRepository.GetSettingAsync<StorageSettings>();
-            if (settings is null)
-                return;
-            var provider = GetProvider(settings);
-            var storedFile = await _FileRepository.GetFile(fileId);
-            if (string.IsNullOrEmpty(userId) ||
-                storedFile.ApplicationUserId.Equals(userId, StringComparison.InvariantCultureIgnoreCase))
-            {
-                await provider.RemoveFile(storedFile, settings);
-                await _FileRepository.RemoveFile(storedFile);
-            }
+            return;
         }
 
-        private IStorageProviderService GetProvider(StorageSettings storageSettings)
+        IStorageProviderService? provider = GetProvider(settings);
+        StoredFile? storedFile = await _FileRepository.GetFile(fileId);
+        if (string.IsNullOrEmpty(userId) ||
+            storedFile.ApplicationUserId.Equals(userId, StringComparison.InvariantCultureIgnoreCase))
         {
-            return _providers.First((service) => service.StorageProvider().Equals(storageSettings.Provider));
+            await provider.RemoveFile(storedFile, settings);
+            await _FileRepository.RemoveFile(storedFile);
         }
+    }
+
+    private IStorageProviderService GetProvider(StorageSettings storageSettings)
+    {
+        return _providers.First((service) => service.StorageProvider().Equals(storageSettings.Provider));
     }
 }

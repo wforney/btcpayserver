@@ -1,9 +1,8 @@
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public enum TransactionStatus
 {
-    public enum TransactionStatus
-    {
-        Unconfirmed,
-        Confirmed,
-        Replaced
-    }
+    Unconfirmed,
+    Confirmed,
+    Replaced
 }

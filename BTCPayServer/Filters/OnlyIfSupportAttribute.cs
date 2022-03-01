@@ -1,30 +1,26 @@
-using System;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.Extensions.DependencyInjection;
 
-namespace BTCPayServer.Filters
+namespace BTCPayServer.Filters;
+
+public class OnlyIfSupportAttribute : Attribute, IAsyncActionFilter
 {
-    public class OnlyIfSupportAttribute : Attribute, IAsyncActionFilter
+    private readonly string _cryptoCode;
+
+    public OnlyIfSupportAttribute(string cryptoCode)
     {
-        private readonly string _cryptoCode;
+        _cryptoCode = cryptoCode;
+    }
 
-        public OnlyIfSupportAttribute(string cryptoCode)
+    public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+    {
+        BTCPayNetworkProvider options = context.HttpContext.RequestServices.GetService<BTCPayNetworkProvider>();
+        if (options.GetNetwork(_cryptoCode) == null)
         {
-            _cryptoCode = cryptoCode;
+            context.Result = new NotFoundResult();
+            return;
         }
 
-        public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
-        {
-            var options = context.HttpContext.RequestServices.GetService<BTCPayNetworkProvider>();
-            if (options.GetNetwork(_cryptoCode) == null)
-            {
-                context.Result = new NotFoundResult();
-                return;
-            }
-
-            await next();
-        }
+        await next();
     }
 }

@@ -1,10 +1,8 @@
-using System.Threading.Tasks;
 using NBitcoin;
 
-namespace BTCPayServer.Services
+namespace BTCPayServer.Services;
+
+public interface IFeeProvider
 {
-    public interface IFeeProvider
-    {
-        Task<FeeRate> GetFeeRateAsync(int blockTarget = 20);
-    }
+    Task<FeeRate> GetFeeRateAsync(int blockTarget = 20);
 }

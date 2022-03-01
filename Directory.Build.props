@@ -1,0 +1,12 @@
+<Project>
+ <PropertyGroup>
+  <DebugType>embedded</DebugType>
+  <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  <ImplicitUsings>enable</ImplicitUsings>
+  <IncludeSymbols>true</IncludeSymbols>
+  <NeutralLanguage>en-US</NeutralLanguage>
+  <Nullable>enable</Nullable>
+  <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+ </PropertyGroup>
+</Project>

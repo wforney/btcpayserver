@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using BTCPayServer.Security;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 namespace BTCPayServer.TagHelpers;
@@ -17,7 +16,7 @@ public class CSPTemplate : TagHelper
     public override async Task ProcessAsync(TagHelperContext context, TagHelperOutput output)
     {
         output.Attributes.RemoveAll("csp-allow");
-        var childContent = await output.GetChildContentAsync();
+        TagHelperContent childContent = await output.GetChildContentAsync();
         var content = childContent.GetContent();
         _csp.AllowInline(content);
     }

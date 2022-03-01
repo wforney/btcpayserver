@@ -1,7 +1,6 @@
-namespace BTCPayServer.Views.Apps
+namespace BTCPayServer.Views.Apps;
+
+public enum AppsNavPages
 {
-    public enum AppsNavPages
-    {
-        Index, Create, Update
-    }
+    Index, Create, Update
 }

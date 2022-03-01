@@ -1,7 +1,6 @@
-namespace BTCPayServer
+namespace BTCPayServer;
+
+public class Roles
 {
-    public class Roles
-    {
-        public const string ServerAdmin = "ServerAdmin";
-    }
+    public const string ServerAdmin = "ServerAdmin";
 }

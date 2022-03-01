@@ -1,9 +1,8 @@
-namespace BTCPayServer.Data
+namespace BTCPayServer.Data;
+
+public interface IPayoutProof
 {
-    public interface IPayoutProof
-    {
-        string ProofType { get; }
-        string Link { get; }
-        string Id { get; }
-    }
+    string ProofType { get; }
+    string Link { get; }
+    string Id { get; }
 }

@@ -1,7 +1,6 @@
-namespace BTCPayServer.Views.Invoice
+namespace BTCPayServer.Views.Invoice;
+
+public enum InvoiceNavPages
 {
-    public enum InvoiceNavPages
-    {
-        Index, Create
-    }
+    Index, Create
 }

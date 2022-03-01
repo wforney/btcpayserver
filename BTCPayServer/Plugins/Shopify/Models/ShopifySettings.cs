@@ -1,32 +1,30 @@
-using System;
 using System.ComponentModel.DataAnnotations;
 using Newtonsoft.Json;
 
-namespace BTCPayServer.Plugins.Shopify.Models
+namespace BTCPayServer.Plugins.Shopify.Models;
+
+public class ShopifySettings
 {
-    public class ShopifySettings
+    [Display(Name = "Shop Name")]
+    public string ShopName { get; set; }
+    public string ApiKey { get; set; }
+    public string Password { get; set; }
+
+    public bool CredentialsPopulated()
     {
-        [Display(Name = "Shop Name")]
-        public string ShopName { get; set; }
-        public string ApiKey { get; set; }
-        public string Password { get; set; }
+        return
+            !string.IsNullOrWhiteSpace(ShopName) &&
+            !string.IsNullOrWhiteSpace(ApiKey) &&
+            !string.IsNullOrWhiteSpace(Password);
+    }
+    public DateTimeOffset? IntegratedAt { get; set; }
 
-        public bool CredentialsPopulated()
+    [JsonIgnore]
+    public string ShopifyUrl
+    {
+        get
         {
-            return
-                !string.IsNullOrWhiteSpace(ShopName) &&
-                !string.IsNullOrWhiteSpace(ApiKey) &&
-                !string.IsNullOrWhiteSpace(Password);
-        }
-        public DateTimeOffset? IntegratedAt { get; set; }
-
-        [JsonIgnore]
-        public string ShopifyUrl
-        {
-            get
-            {
-                return ShopName?.Contains(".", StringComparison.OrdinalIgnoreCase) is true ? ShopName : $"https://{ShopName}.myshopify.com";
-            }
+            return ShopName?.Contains(".", StringComparison.OrdinalIgnoreCase) is true ? ShopName : $"https://{ShopName}.myshopify.com";
         }
     }
 }

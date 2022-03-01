@@ -1,8 +1,7 @@
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class ApprovePayoutRequest
 {
-    public class ApprovePayoutRequest
-    {
-        public int Revision { get; set; }
-        public string RateRule { get; set; }
-    }
+    public int Revision { get; set; }
+    public string RateRule { get; set; }
 }

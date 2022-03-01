@@ -1,8 +1,5 @@
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Razor.TagHelpers;
-using Microsoft.Extensions.Logging;
 namespace BTCPayServer.TagHelpers;
 
 
@@ -26,9 +23,14 @@ public class PermissionTagHelper : TagHelper
     public override async Task ProcessAsync(TagHelperContext context, TagHelperOutput output)
     {
         if (string.IsNullOrEmpty(Permission))
+        {
             return;
+        }
+
         if (_httpContextAccessor.HttpContext is null)
+        {
             return;
+        }
 
         var key = $"{Permission}_{PermissionResource}";
         if (!_httpContextAccessor.HttpContext.Items.TryGetValue(key, out var o) ||

@@ -1,7 +1,6 @@
-namespace BTCPayServer.Services.Mails
+namespace BTCPayServer.Services.Mails;
+
+public interface IEmailSender
 {
-    public interface IEmailSender
-    {
-        void SendEmail(string email, string subject, string message);
-    }
+    void SendEmail(string email, string subject, string message);
 }

@@ -1,97 +1,97 @@
-using System;
 using System.Collections.Concurrent;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
-namespace BTCPayServer
+namespace BTCPayServer;
+
+public class CustomThreadPool : IDisposable
 {
-    public class CustomThreadPool : IDisposable
+    private readonly CancellationTokenSource _Cancel = new CancellationTokenSource();
+    private readonly TaskCompletionSource<bool> _Exited;
+    private int _ExitedCount = 0;
+    private readonly Thread[] _Threads;
+    private Exception _UnhandledException;
+    private readonly BlockingCollection<(Action, TaskCompletionSource<object>)> _Actions = new BlockingCollection<(Action, TaskCompletionSource<object>)>(new ConcurrentQueue<(Action, TaskCompletionSource<object>)>());
+
+    public CustomThreadPool(int threadCount, string threadName)
     {
-        readonly CancellationTokenSource _Cancel = new CancellationTokenSource();
-        readonly TaskCompletionSource<bool> _Exited;
-        int _ExitedCount = 0;
-        readonly Thread[] _Threads;
-        Exception _UnhandledException;
-        readonly BlockingCollection<(Action, TaskCompletionSource<object>)> _Actions = new BlockingCollection<(Action, TaskCompletionSource<object>)>(new ConcurrentQueue<(Action, TaskCompletionSource<object>)>());
-
-        public CustomThreadPool(int threadCount, string threadName)
+        if (threadCount <= 0)
         {
-            if (threadCount <= 0)
-                throw new ArgumentOutOfRangeException(nameof(threadCount));
-            _Exited = new TaskCompletionSource<bool>();
-            _Threads = Enumerable.Range(0, threadCount).Select(_ => new Thread(RunLoop) { Name = threadName }).ToArray();
-            foreach (var t in _Threads)
-                t.Start();
+            throw new ArgumentOutOfRangeException(nameof(threadCount));
         }
 
-        public void Do(Action act)
+        _Exited = new TaskCompletionSource<bool>();
+        _Threads = Enumerable.Range(0, threadCount).Select(_ => new Thread(RunLoop) { Name = threadName }).ToArray();
+        foreach (Thread t in _Threads)
         {
-            DoAsync(act).GetAwaiter().GetResult();
+            t.Start();
         }
+    }
 
-        public T Do<T>(Func<T> act)
-        {
-            return DoAsync(act).GetAwaiter().GetResult();
-        }
+    public void Do(Action act)
+    {
+        DoAsync(act).GetAwaiter().GetResult();
+    }
 
-        public async Task<T> DoAsync<T>(Func<T> act)
-        {
-            TaskCompletionSource<object> done = new TaskCompletionSource<object>();
-            _Actions.Add((() =>
-            {
-                try
-                {
-                    done.TrySetResult(act());
-                }
-                catch (Exception ex) { done.TrySetException(ex); }
-            }
-            , done));
-            return (T)(await done.Task.ConfigureAwait(false));
-        }
+    public T Do<T>(Func<T> act)
+    {
+        return DoAsync(act).GetAwaiter().GetResult();
+    }
 
-        public Task DoAsync(Action act)
-        {
-            return DoAsync<object>(() =>
-            {
-                act();
-                return null;
-            });
-        }
-
-        void RunLoop()
+    public async Task<T> DoAsync<T>(Func<T> act)
+    {
+        TaskCompletionSource<object> done = new TaskCompletionSource<object>();
+        _Actions.Add((() =>
         {
             try
             {
-                foreach (var act in _Actions.GetConsumingEnumerable(_Cancel.Token))
-                {
-                    act.Item1();
-                }
+                done.TrySetResult(act());
             }
-            catch (OperationCanceledException) when (_Cancel.IsCancellationRequested) { }
-            catch (Exception ex)
+            catch (Exception ex) { done.TrySetException(ex); }
+        }
+        , done));
+        return (T)(await done.Task.ConfigureAwait(false));
+    }
+
+    public Task DoAsync(Action act)
+    {
+        return DoAsync<object>(() =>
+        {
+            act();
+            return null;
+        });
+    }
+
+    private void RunLoop()
+    {
+        try
+        {
+            foreach ((Action, TaskCompletionSource<object>) act in _Actions.GetConsumingEnumerable(_Cancel.Token))
             {
-                _Cancel.Cancel();
-                _UnhandledException = ex;
-            }
-            if (Interlocked.Increment(ref _ExitedCount) == _Threads.Length)
-            {
-                foreach (var action in _Actions)
-                {
-                    try
-                    {
-                        action.Item2.TrySetCanceled();
-                    }
-                    catch { }
-                }
-                _Exited.TrySetResult(true);
+                act.Item1();
             }
         }
-
-        public void Dispose()
+        catch (OperationCanceledException) when (_Cancel.IsCancellationRequested) { }
+        catch (Exception ex)
         {
             _Cancel.Cancel();
-            _Exited.Task.GetAwaiter().GetResult();
+            _UnhandledException = ex;
         }
+        if (Interlocked.Increment(ref _ExitedCount) == _Threads.Length)
+        {
+            foreach ((Action, TaskCompletionSource<object>) action in _Actions)
+            {
+                try
+                {
+                    action.Item2.TrySetCanceled();
+                }
+                catch { }
+            }
+            _Exited.TrySetResult(true);
+        }
+    }
+
+    public void Dispose()
+    {
+        _Cancel.Cancel();
+        _Exited.Task.GetAwaiter().GetResult();
     }
 }

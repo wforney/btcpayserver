@@ -1,4 +1,3 @@
-using System;
 using BTCPayServer.Security;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 namespace BTCPayServer.TagHelpers;
@@ -17,7 +16,7 @@ public class CSPA : TagHelper
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
         output.Attributes.RemoveAll("csp-allow");
-        if (output.Attributes.TryGetAttribute("href", out var attr))
+        if (output.Attributes.TryGetAttribute("href", out TagHelperAttribute attr))
         {
             var v = attr.Value.ToString();
             if (v.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))

@@ -1,13 +1,9 @@
-using System.Collections.Generic;
-using System.IO;
+namespace BTCPayServer.Models.ServerViewModels;
 
-namespace BTCPayServer.Models.ServerViewModels
+public class LogsViewModel
 {
-    public class LogsViewModel
-    {
-        public List<FileInfo> LogFiles { get; set; } = new List<FileInfo>();
-        public string Log { get; set; }
-        public int LogFileCount { get; set; }
-        public int LogFileOffset { get; set; }
-    }
+    public List<FileInfo> LogFiles { get; set; } = new List<FileInfo>();
+    public string Log { get; set; }
+    public int LogFileCount { get; set; }
+    public int LogFileOffset { get; set; }
 }

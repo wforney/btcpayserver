@@ -2,11 +2,10 @@ using NBitcoin;
 using NBitcoin.JsonConverters;
 using Newtonsoft.Json;
 
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class OnChainWalletFeeRateData
 {
-    public class OnChainWalletFeeRateData
-    {
-        [JsonConverter(typeof(FeeRateJsonConverter))]
-        public FeeRate FeeRate { get; set; }
-    }
+    [JsonConverter(typeof(FeeRateJsonConverter))]
+    public FeeRate FeeRate { get; set; }
 }

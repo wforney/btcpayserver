@@ -1,7 +1,6 @@
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class UpdateNotification
 {
-    public class UpdateNotification
-    {
-        public bool? Seen { get; set; }
-    }
+    public bool? Seen { get; set; }
 }

@@ -1,44 +1,42 @@
-using System;
+namespace BTCPayServer.Services.Apps;
 
-namespace BTCPayServer.Services.Apps
+public class CrowdfundSettings
 {
-    public class CrowdfundSettings
+    public string Title { get; set; }
+    public string Description { get; set; }
+    public bool Enabled { get; set; }
+
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+
+    public string TargetCurrency { get; set; }
+    public decimal? TargetAmount { get; set; }
+
+    public bool EnforceTargetAmount { get; set; }
+    public string CustomCSSLink { get; set; }
+    public string MainImageUrl { get; set; }
+    public string NotificationUrl { get; set; }
+    public string Tagline { get; set; }
+    public string EmbeddedCSS { get; set; }
+    public string PerksTemplate { get; set; }
+    public bool DisqusEnabled { get; set; }
+    public bool SoundsEnabled { get; set; }
+    public string DisqusShortname { get; set; }
+    public bool AnimationsEnabled { get; set; } = true;
+    public int ResetEveryAmount { get; set; } = 1;
+    public CrowdfundResetEvery ResetEvery { get; set; } = CrowdfundResetEvery.Never;
+    [Obsolete("Use AppData.TagAllInvoices instead")]
+    public bool UseAllStoreInvoices { get; set; }
+    public bool DisplayPerksRanking { get; set; }
+    public bool DisplayPerksValue { get; set; }
+    public bool SortPerksByPopularity { get; set; }
+    public string[] AnimationColors { get; set; } =
     {
-        public string Title { get; set; }
-        public string Description { get; set; }
-        public bool Enabled { get; set; }
-
-        public DateTime? StartDate { get; set; }
-        public DateTime? EndDate { get; set; }
-
-        public string TargetCurrency { get; set; }
-        public decimal? TargetAmount { get; set; }
-
-        public bool EnforceTargetAmount { get; set; }
-        public string CustomCSSLink { get; set; }
-        public string MainImageUrl { get; set; }
-        public string NotificationUrl { get; set; }
-        public string Tagline { get; set; }
-        public string EmbeddedCSS { get; set; }
-        public string PerksTemplate { get; set; }
-        public bool DisqusEnabled { get; set; }
-        public bool SoundsEnabled { get; set; }
-        public string DisqusShortname { get; set; }
-        public bool AnimationsEnabled { get; set; } = true;
-        public int ResetEveryAmount { get; set; } = 1;
-        public CrowdfundResetEvery ResetEvery { get; set; } = CrowdfundResetEvery.Never;
-        [Obsolete("Use AppData.TagAllInvoices instead")]
-        public bool UseAllStoreInvoices { get; set; }
-        public bool DisplayPerksRanking { get; set; }
-        public bool DisplayPerksValue { get; set; }
-        public bool SortPerksByPopularity { get; set; }
-        public string[] AnimationColors { get; set; } =
-        {
             "#FF6138", "#FFBE53", "#2980B9", "#282741"
         };
 
-        public string[] Sounds { get; set; } =
-        {
+    public string[] Sounds { get; set; } =
+    {
             "//github.com/ClaudiuHKS/AdvancedQuakeSounds/raw/master/sound/QuakeSounds/dominating.wav",
             "//github.com/ClaudiuHKS/AdvancedQuakeSounds/raw/master/sound/QuakeSounds/doublekill.wav",
             "//github.com/ClaudiuHKS/AdvancedQuakeSounds/raw/master/sound/QuakeSounds/doublekill2.wav",
@@ -80,13 +78,12 @@ namespace BTCPayServer.Services.Apps
             "//github.com/ClaudiuHKS/AdvancedQuakeSounds/raw/master/sound/QuakeSounds/unstoppable.wav",
             "//github.com/ClaudiuHKS/AdvancedQuakeSounds/raw/master/sound/QuakeSounds/whickedsick.wav"
         };
-    }
-    public enum CrowdfundResetEvery
-    {
-        Never,
-        Hour,
-        Day,
-        Month,
-        Year
-    }
+}
+public enum CrowdfundResetEvery
+{
+    Never,
+    Hour,
+    Day,
+    Month,
+    Year
 }

@@ -1,40 +1,38 @@
-using System;
 using BTCPayServer.Abstractions.Extensions;
 using BTCPayServer.Services;
 
-namespace BTCPayServer.Models.ServerViewModels
+namespace BTCPayServer.Models.ServerViewModels;
+
+public class DynamicDnsViewModel
 {
-    public class DynamicDnsViewModel
+    public class WellKnownService
     {
-        public class WellKnownService
+        public WellKnownService(string name, string url)
         {
-            public WellKnownService(string name, string url)
-            {
-                Name = name;
-                Url = url;
-            }
-            public string Name { get; set; }
-            public string Url { get; set; }
+            Name = name;
+            Url = url;
         }
-        public bool Modify { get; set; }
-        public DynamicDnsService Settings { get; set; }
-        public string LastUpdated
+        public string Name { get; set; }
+        public string Url { get; set; }
+    }
+    public bool Modify { get; set; }
+    public DynamicDnsService Settings { get; set; }
+    public string LastUpdated
+    {
+        get
         {
-            get
+            if (Settings?.LastUpdated is DateTimeOffset date)
             {
-                if (Settings?.LastUpdated is DateTimeOffset date)
-                {
-                    return ViewsRazor.ToTimeAgo(date);
-                }
-                return null;
+                return ViewsRazor.ToTimeAgo(date);
             }
+            return null;
         }
-        public WellKnownService[] KnownServices { get; set; } = new[]
-        {
+    }
+    public WellKnownService[] KnownServices { get; set; } = new[]
+    {
             new WellKnownService("noip", "https://dynupdate.no-ip.com/nic/update"),
             new WellKnownService("dyndns", "https://members.dyndns.org/v3/update"),
             new WellKnownService("duckdns", "https://www.duckdns.org/v3/update"),
             new WellKnownService("google", "https://domains.google.com/nic/update"),
         };
-    }
 }

@@ -1,7 +1,6 @@
-namespace BTCPayServer.Storage.Services.Providers.Models
+namespace BTCPayServer.Storage.Services.Providers.Models;
+
+public interface IBaseStorageConfiguration
 {
-    public interface IBaseStorageConfiguration
-    {
-        string ContainerName { get; set; }
-    }
+    string ContainerName { get; set; }
 }

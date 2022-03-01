@@ -1,68 +1,63 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using BTCPayServer.Logging;
 using BTCPayServer.Services.Invoices;
-using Microsoft.Extensions.Logging;
 using NBitcoin;
 using NBitpayClient;
 using NBXplorer;
 
-namespace BTCPayServer.Payments.PayJoin
+namespace BTCPayServer.Payments.PayJoin;
+
+public class PayjoinReceiverContext
 {
-    public class PayjoinReceiverContext
+    private readonly InvoiceRepository _invoiceRepository;
+    private readonly ExplorerClient _explorerClient;
+    private readonly PayJoinRepository _payJoinRepository;
+    private readonly BTCPayServer.Logging.Logs BTCPayLogs;
+    public PayjoinReceiverContext(InvoiceRepository invoiceRepository, ExplorerClient explorerClient, PayJoinRepository payJoinRepository, BTCPayServer.Logging.Logs logs)
     {
-        private readonly InvoiceRepository _invoiceRepository;
-        private readonly ExplorerClient _explorerClient;
-        private readonly PayJoinRepository _payJoinRepository;
-        private readonly BTCPayServer.Logging.Logs BTCPayLogs;
-        public PayjoinReceiverContext(InvoiceRepository invoiceRepository, ExplorerClient explorerClient, PayJoinRepository payJoinRepository, BTCPayServer.Logging.Logs logs)
+        BTCPayLogs = logs;
+        _invoiceRepository = invoiceRepository;
+        _explorerClient = explorerClient;
+        _payJoinRepository = payJoinRepository;
+    }
+    public Invoice Invoice { get; set; }
+    public NBitcoin.Transaction OriginalTransaction { get; set; }
+    public InvoiceLogs Logs { get; } = new InvoiceLogs();
+    public OutPoint[] LockedUTXOs { get; set; }
+    public async Task DisposeAsync()
+    {
+        List<Task> disposing = new List<Task>();
+        if (Invoice != null)
         {
-            this.BTCPayLogs = logs;
-            _invoiceRepository = invoiceRepository;
-            _explorerClient = explorerClient;
-            _payJoinRepository = payJoinRepository;
+            disposing.Add(_invoiceRepository.AddInvoiceLogs(Invoice.Id, Logs));
         }
-        public Invoice Invoice { get; set; }
-        public NBitcoin.Transaction OriginalTransaction { get; set; }
-        public InvoiceLogs Logs { get; } = new InvoiceLogs();
-        public OutPoint[] LockedUTXOs { get; set; }
-        public async Task DisposeAsync()
+        if (!doNotBroadcast && OriginalTransaction != null)
         {
-            List<Task> disposing = new List<Task>();
-            if (Invoice != null)
-            {
-                disposing.Add(_invoiceRepository.AddInvoiceLogs(Invoice.Id, Logs));
-            }
-            if (!doNotBroadcast && OriginalTransaction != null)
-            {
-                disposing.Add(_explorerClient.BroadcastAsync(OriginalTransaction));
-            }
-            if (!success && LockedUTXOs != null)
-            {
-                disposing.Add(_payJoinRepository.TryUnlock(LockedUTXOs));
-            }
-            try
-            {
-                await Task.WhenAll(disposing);
-            }
-            catch (Exception ex)
-            {
-                BTCPayLogs.PayServer.LogWarning(ex, "Error while disposing the PayjoinReceiverContext");
-            }
+            disposing.Add(_explorerClient.BroadcastAsync(OriginalTransaction));
         }
+        if (!success && LockedUTXOs != null)
+        {
+            disposing.Add(_payJoinRepository.TryUnlock(LockedUTXOs));
+        }
+        try
+        {
+            await Task.WhenAll(disposing);
+        }
+        catch (Exception ex)
+        {
+            BTCPayLogs.PayServer.LogWarning(ex, "Error while disposing the PayjoinReceiverContext");
+        }
+    }
 
-        bool doNotBroadcast = false;
-        public void DoNotBroadcast()
-        {
-            doNotBroadcast = true;
-        }
+    private bool doNotBroadcast = false;
+    public void DoNotBroadcast()
+    {
+        doNotBroadcast = true;
+    }
 
-        bool success = false;
-        public void Success()
-        {
-            doNotBroadcast = true;
-            success = true;
-        }
+    private bool success = false;
+    public void Success()
+    {
+        doNotBroadcast = true;
+        success = true;
     }
 }

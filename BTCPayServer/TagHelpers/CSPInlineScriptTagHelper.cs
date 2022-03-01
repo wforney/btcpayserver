@@ -20,11 +20,16 @@ public class CSPInlineScriptTagHelper : TagHelper
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
         if (output.Attributes.ContainsName("src"))
+        {
             return;
-        if (output.Attributes.TryGetAttribute("type", out var attr))
+        }
+
+        if (output.Attributes.TryGetAttribute("type", out TagHelperAttribute attr))
         {
             if (attr.Value?.ToString() != "text/javascript")
+            {
                 return;
+            }
         }
         var nonce = RandomUtils.GetUInt256().ToString().Substring(0, 32);
         output.Attributes.Add(new TagHelperAttribute("nonce", nonce));

@@ -1,10 +1,8 @@
-using System.Threading.Tasks;
 using BTCPayServer.Client;
 
-namespace BTCPayServer.Abstractions.Contracts
+namespace BTCPayServer.Abstractions.Contracts;
+
+public interface IBTCPayServerClientFactory
 {
-    public interface IBTCPayServerClientFactory
-    {
-        Task<BTCPayServerClient> Create(string userId, params string[] storeIds);
-    }
+    Task<BTCPayServerClient> Create(string userId, params string[] storeIds);
 }

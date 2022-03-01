@@ -1,6 +1,5 @@
-namespace BTCPayServer.Client.Models
+namespace BTCPayServer.Client.Models;
+
+public class CreatePaymentRequestRequest : PaymentRequestBaseData
 {
-    public class CreatePaymentRequestRequest : PaymentRequestBaseData
-    {
-    }
 }

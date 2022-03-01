@@ -1,10 +1,9 @@
 using NBXplorer;
 
-namespace BTCPayServer.Common
+namespace BTCPayServer.Common;
+
+public interface IExplorerClientProvider
 {
-    public interface IExplorerClientProvider
-    {
-        ExplorerClient GetExplorerClient(string cryptoCode);
-        ExplorerClient GetExplorerClient(BTCPayNetworkBase network);
-    }
+    ExplorerClient GetExplorerClient(string cryptoCode);
+    ExplorerClient GetExplorerClient(BTCPayNetworkBase network);
 }

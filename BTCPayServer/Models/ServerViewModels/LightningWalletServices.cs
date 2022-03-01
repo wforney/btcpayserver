@@ -1,9 +1,8 @@
-namespace BTCPayServer.Models.ServerViewModels
+namespace BTCPayServer.Models.ServerViewModels;
+
+public class LightningWalletServices
 {
-    public class LightningWalletServices
-    {
-        public string ServiceLink { get; set; }
-        public bool ShowQR { get; set; }
-        public string WalletName { get; internal set; }
-    }
+    public string ServiceLink { get; set; }
+    public bool ShowQR { get; set; }
+    public string WalletName { get; internal set; }
 }

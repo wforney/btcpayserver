@@ -1,15 +1,13 @@
-using System;
 using Microsoft.AspNetCore.Authorization;
 
-namespace BTCPayServer.Security
+namespace BTCPayServer.Security;
+
+public class PolicyRequirement : IAuthorizationRequirement
 {
-    public class PolicyRequirement : IAuthorizationRequirement
+    public PolicyRequirement(string policy)
     {
-        public PolicyRequirement(string policy)
-        {
-            ArgumentNullException.ThrowIfNull(policy);
-            Policy = policy;
-        }
-        public string Policy { get; }
+        ArgumentNullException.ThrowIfNull(policy);
+        Policy = policy;
     }
+    public string Policy { get; }
 }
