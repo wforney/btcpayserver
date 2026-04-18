@@ -43,7 +43,7 @@
     <PackageReference Include="Fido2" Version="4.0.0" />
     <PackageReference Include="Fido2.AspNet" Version="4.0.0" />
     <PackageReference Include="LNURL" Version="0.0.36" />
-    <PackageReference Include="MailKit" Version="4.14.1" />
+    <PackageReference Include="MailKit" Version="4.16.0" />
     <PackageReference Include="QRCoder" Version="1.7.0" />
     <PackageReference Include="NBitpayClient" Version="1.0.0.39" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
